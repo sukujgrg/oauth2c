@@ -4,10 +4,37 @@ on: pull_request
 
 jobs:
   auto-approve:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.actor == 'dependabot[bot]'
     permissions:
       pull-requests: write
       checks: read
       statuses: read
       actions: read
       contents: read
-    uses: SecureAuthCorp/github-actions/.github/workflows/dependabot-auto-approve.yaml@3891a1c4e9fca203588d0b9906b3b0b1fa862bb5
+    steps:
+      - name: Verify all commits are from the bot
+        run: |
+          authors=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/commits" --paginate --jq '.[].author.login' | sort -u)
+          if [ "$authors" != "$BOT_LOGIN" ]; then
+            echo "::error::Refusing to auto-approve: PR contains commits not authored by ${BOT_LOGIN} (authors: ${authors})"
+            exit 1
+          fi
+        env:
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BOT_LOGIN: dependabot[bot]
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Wait for required checks to pass
+        timeout-minutes: 30
+        run: gh pr checks "$PR_URL" --required --watch --fail-fast
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Approve the PR
+        run: gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
