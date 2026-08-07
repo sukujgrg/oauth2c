@@ -29,7 +29,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Wait for required checks to pass
         timeout-minutes: 30
-        run: gh pr checks "$PR_URL" --required --watch --fail-fast
+        run: |
+          set +e
+          output=$(gh pr checks "$PR_URL" --required --watch --fail-fast 2>&1)
+          code=$?
+          set -e
+          echo "$output"
+          if [ $code -ne 0 ] && echo "$output" | grep -qi "no required checks"; then
+            echo "No required checks configured on the base branch; skipping wait."
+            exit 0
+          fi
+          exit $code
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
