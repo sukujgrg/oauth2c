@@ -65,6 +65,7 @@ type ClientConfig struct {
 	Resource               []string
 	AuthMethod             string `validate:"omitempty,oneof=client_secret_basic client_secret_post client_secret_jwt private_key_jwt self_signed_tls_client_auth tls_client_auth none"`
 	PKCE                   bool
+	Nonce                  string
 	PAR                    bool
 	RequestObject          bool
 	EncryptedRequestObject bool

@@ -37,9 +37,13 @@ func (c *OAuth2Cmd) ImplicitGrantFlow(clientConfig oauth2.ClientConfig, serverCo
 	}
 
 	tokenResponse := oauth2.NewTokenResponseFromForm(callbackRequest.Form)
+	if tokenResponse.IDToken == "" {
+		tokenResponse.IDToken = callbackRequest.Get("id_token")
+	}
 
 	LogRequest(callbackRequest)
 	LogTokenPayloadln(tokenResponse)
+	LogNonce(clientConfig.Nonce, tokenResponse)
 	Logln()
 
 	callbackStatus("Obtained authorization")

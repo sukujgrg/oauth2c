@@ -115,6 +115,7 @@ func LogInputData(cc oauth2.ClientConfig) {
 		{"Response types", strings.Join(cc.ResponseType, ", ")},
 		{"Response mode", cc.ResponseMode},
 		{"PKCE", strconv.FormatBool(cc.PKCE)},
+		{"Nonce", cc.Nonce},
 		{"Client ID", cc.ClientID},
 		{"Client secret", cc.ClientSecret},
 		{"Username", cc.Username},
@@ -269,6 +270,28 @@ func LogTokenPayloadln(response oauth2.TokenResponse) {
 	}
 
 	LogTokenPayload(response)
+	pterm.Println()
+}
+
+func LogNonce(expected string, response oauth2.TokenResponse) {
+	if silent || expected == "" {
+		return
+	}
+
+	got, err := oauth2.IDTokenNonce(response.IDToken)
+	if err != nil {
+		pterm.Error.Println(err)
+		return
+	}
+
+	received := got
+	if response.IDToken == "" {
+		received = "(none)"
+	} else if got == "" {
+		received = "(missing)"
+	}
+
+	LogBox("Nonce", "nonce = %s\nID Token nonce = %s\nmatch = %t", expected, received, got == expected && response.IDToken != "")
 	pterm.Println()
 }
 

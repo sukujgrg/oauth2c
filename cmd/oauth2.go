@@ -60,6 +60,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd.PersistentFlags().StringSliceVar(&cconfig.Audience, "audience", []string{}, "requested audience")
 	cmd.PersistentFlags().StringSliceVar(&cconfig.Resource, "resource", []string{}, "requested resource")
 	cmd.PersistentFlags().BoolVar(&cconfig.PKCE, "pkce", false, "enable proof key for code exchange (PKCE)")
+	cmd.PersistentFlags().StringVar(&cconfig.Nonce, "nonce", "", "openid connect nonce")
 	cmd.PersistentFlags().BoolVar(&cconfig.PAR, "par", false, "enable pushed authorization requests (PAR)")
 	cmd.PersistentFlags().BoolVar(&cconfig.RequestObject, "request-object", false, "pass request parameters as jwt")
 	cmd.PersistentFlags().BoolVar(&cconfig.EncryptedRequestObject, "encrypted-request-object", false, "pass request parameters as encrypted jwt")

@@ -95,6 +95,7 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 	LogAuthMethod(clientConfig)
 	LogRequestAndResponse(tokenRequest, tokenResponse)
 	LogTokenPayloadln(tokenResponse)
+	LogNonce(clientConfig.Nonce, tokenResponse)
 
 	tokenStatus("Obtained token")
 

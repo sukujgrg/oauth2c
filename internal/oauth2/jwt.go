@@ -30,6 +30,20 @@ func UnsafeParseJWT(token string) (*jwt.JSONWebToken, map[string]interface{}, er
 	return t, claims, nil
 }
 
+func IDTokenNonce(idToken string) (string, error) {
+	if idToken == "" {
+		return "", nil
+	}
+
+	_, claims, err := UnsafeParseJWT(idToken)
+	if err != nil {
+		return "", err
+	}
+
+	nonce, _ := claims["nonce"].(string)
+	return nonce, nil
+}
+
 type SignerProvider func() (jose.Signer, interface{}, error)
 
 func JWKSigner(keyPath string, hc *http.Client) SignerProvider {

@@ -67,6 +67,9 @@ func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig,
 
 	LogRequest(callbackRequest)
 	LogJARM(callbackRequest)
+	if idToken := callbackRequest.Get("id_token"); idToken != "" {
+		LogNonce(clientConfig.Nonce, oauth2.TokenResponse{IDToken: idToken})
+	}
 	Logln()
 
 	callbackStatus("Obtained authorization code")
@@ -92,6 +95,7 @@ func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig,
 	LogAuthMethod(clientConfig)
 	LogRequestAndResponse(tokenRequest, tokenResponse)
 	LogTokenPayloadln(tokenResponse)
+	LogNonce(clientConfig.Nonce, tokenResponse)
 
 	exchangeStatus("Exchanged authorization code for access token")
 

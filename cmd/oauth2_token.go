@@ -65,6 +65,7 @@ func (c *OAuth2Cmd) tokenEndpointFlow(
 	LogAuthMethod(clientConfig)
 	LogRequestAndResponse(tokenRequest, tokenResponse)
 	LogTokenPayloadln(tokenResponse)
+	LogNonce(clientConfig.Nonce, tokenResponse)
 
 	authorizationStatus("Authorization completed")
 
