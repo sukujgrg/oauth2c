@@ -30,18 +30,160 @@ func UnsafeParseJWT(token string) (*jwt.JSONWebToken, map[string]interface{}, er
 	return t, claims, nil
 }
 
-func IDTokenNonce(idToken string) (string, error) {
-	if idToken == "" {
+var (
+	ErrIDTokenNonceMissing  = errors.New("id token nonce claim is missing")
+	ErrIDTokenNonceMismatch = errors.New("id token nonce does not match")
+)
+
+func VerifyIDToken(idToken string, sconfig ServerConfig, cconfig ClientConfig, hc *http.Client) (map[string]interface{}, error) {
+	token, err := jwt.ParseSigned(idToken, JOSESignatureAlgorithms)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse id token")
+	}
+
+	var (
+		keys       jose.JSONWebKeySet
+		registered jwt.Claims
+		claims     = map[string]interface{}{}
+		hmacKey    []byte
+	)
+
+	if sconfig.JWKsURI != "" {
+		if keys, err = ReadKeySet(sconfig.JWKsURI, hc); err != nil {
+			return nil, errors.Wrap(err, "failed to verify id token signature")
+		}
+	}
+
+	if cconfig.ClientSecret != "" {
+		hmacKey = []byte(cconfig.ClientSecret)
+	}
+
+	if err = verifyIDTokenSignature(token, keys, hmacKey, &registered, &claims); err != nil {
+		return nil, err
+	}
+
+	if err = validateIDTokenClaims(registered, sconfig, cconfig); err != nil {
+		return nil, err
+	}
+
+	return claims, nil
+}
+
+func verifyIDTokenSignature(token *jwt.JSONWebToken, keys jose.JSONWebKeySet, hmacKey []byte, dest ...interface{}) error {
+	var verifyErr error
+
+	if len(keys.Keys) > 0 {
+		kid := ""
+		if len(token.Headers) > 0 {
+			kid = token.Headers[0].KeyID
+		}
+
+		if kid != "" {
+			if err := token.Claims(&keys, dest...); err == nil {
+				return nil
+			} else {
+				verifyErr = err
+			}
+		} else {
+			sigKeys := signingKeys(keys)
+			switch len(sigKeys) {
+			case 1:
+				if err := token.Claims(sigKeys[0], dest...); err == nil {
+					return nil
+				} else {
+					verifyErr = err
+				}
+			case 0:
+				verifyErr = errors.New("jwks has no signing keys")
+			default:
+				verifyErr = errors.New("id token has no kid and JWKS has multiple signing keys")
+			}
+		}
+	}
+
+	if len(hmacKey) > 0 {
+		if err := token.Claims(hmacKey, dest...); err == nil {
+			return nil
+		} else {
+			verifyErr = err
+		}
+	}
+
+	if verifyErr != nil {
+		return errors.Wrap(verifyErr, "failed to verify id token signature")
+	}
+
+	return errors.New("failed to verify id token signature: no jwks_uri or client secret")
+}
+
+func signingKeys(set jose.JSONWebKeySet) []jose.JSONWebKey {
+	var keys []jose.JSONWebKey
+
+	for _, key := range set.Keys {
+		if key.Use == "" || key.Use == string(SigningKey) {
+			keys = append(keys, key)
+		}
+	}
+
+	return keys
+}
+
+func validateIDTokenClaims(registered jwt.Claims, sconfig ServerConfig, cconfig ClientConfig) error {
+	if registered.Issuer == "" {
+		return errors.New("id token iss claim is missing")
+	}
+	if len(registered.Audience) == 0 {
+		return errors.New("id token aud claim is missing")
+	}
+	if registered.Expiry == nil {
+		return errors.New("id token exp claim is missing")
+	}
+	if registered.IssuedAt == nil {
+		return errors.New("id token iat claim is missing")
+	}
+
+	issuer := sconfig.Issuer
+	if issuer == "" {
+		issuer = cconfig.IssuerURL
+	}
+
+	expected := jwt.Expected{
+		Time: time.Now(),
+	}
+	if issuer != "" {
+		expected.Issuer = issuer
+	}
+	if cconfig.ClientID != "" {
+		expected.AnyAudience = jwt.Audience{cconfig.ClientID}
+	}
+
+	if err := registered.Validate(expected); err != nil {
+		return errors.Wrap(err, "id token claims are invalid")
+	}
+
+	return nil
+}
+
+func CheckIDTokenNonce(idToken, expected string, sconfig ServerConfig, cconfig ClientConfig, hc *http.Client) (string, error) {
+	if expected == "" || idToken == "" {
 		return "", nil
 	}
 
-	_, claims, err := UnsafeParseJWT(idToken)
+	claims, err := VerifyIDToken(idToken, sconfig, cconfig, hc)
 	if err != nil {
 		return "", err
 	}
 
-	nonce, _ := claims["nonce"].(string)
-	return nonce, nil
+	got, _ := claims["nonce"].(string)
+	if got == "" {
+		return "", ErrIDTokenNonceMissing
+	}
+
+	if got != expected {
+		return got, errors.Wrapf(ErrIDTokenNonceMismatch, "sent %q, got %q", expected, got)
+	}
+
+	return got, nil
 }
 
 type SignerProvider func() (jose.Signer, interface{}, error)

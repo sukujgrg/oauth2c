@@ -589,8 +589,9 @@ oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
 
 OpenID Connect `nonce` associates a client session with an ID Token and
 mitigates replay attacks. Authorization requests still send a generated `nonce`
-by default. When `--nonce` is set, oauth2c uses that value instead and prints
-whether the ID Token `nonce` claim matches.
+by default. When `--nonce` is set, oauth2c uses that value instead. If an ID
+Token is returned, oauth2c verifies its signature and `iss`, `aud`, `exp`, and
+`iat` claims, then fails when the `nonce` claim is missing or does not match.
 
 ```sh
 oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \

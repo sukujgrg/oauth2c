@@ -7,7 +7,9 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -273,26 +275,27 @@ func LogTokenPayloadln(response oauth2.TokenResponse) {
 	pterm.Println()
 }
 
-func LogNonce(expected string, response oauth2.TokenResponse) {
-	if silent || expected == "" {
-		return
+func CheckNonce(expected, idToken string, clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
+	if expected == "" || idToken == "" {
+		return nil
 	}
 
-	got, err := oauth2.IDTokenNonce(response.IDToken)
-	if err != nil {
-		pterm.Error.Println(err)
-		return
+	got, err := oauth2.CheckIDTokenNonce(idToken, expected, serverConfig, clientConfig, hc)
+
+	if !silent {
+		received := got
+		switch {
+		case errors.Is(err, oauth2.ErrIDTokenNonceMissing):
+			received = "(missing)"
+		case err != nil && got == "":
+			received = "(unverified)"
+		}
+
+		LogBox("Nonce", "nonce = %s\nID Token nonce = %s\nmatch = %t", expected, received, err == nil)
+		pterm.Println()
 	}
 
-	received := got
-	if response.IDToken == "" {
-		received = "(none)"
-	} else if got == "" {
-		received = "(missing)"
-	}
-
-	LogBox("Nonce", "nonce = %s\nID Token nonce = %s\nmatch = %t", expected, received, got == expected && response.IDToken != "")
-	pterm.Println()
+	return err
 }
 
 func LogAuthMethod(config oauth2.ClientConfig) {

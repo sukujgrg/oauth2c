@@ -43,6 +43,7 @@ func RequestDeviceAuthorization(ctx context.Context, cconfig ClientConfig, sconf
 	}
 
 	if cconfig.Nonce != "" {
+		request.Nonce = cconfig.Nonce
 		request.Form.Set("nonce", cconfig.Nonce)
 	}
 

@@ -43,7 +43,9 @@ func (c *OAuth2Cmd) ImplicitGrantFlow(clientConfig oauth2.ClientConfig, serverCo
 
 	LogRequest(callbackRequest)
 	LogTokenPayloadln(tokenResponse)
-	LogNonce(clientConfig.Nonce, tokenResponse)
+	if err = CheckNonce(authorizeRequest.Nonce, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
+		return err
+	}
 	Logln()
 
 	callbackStatus("Obtained authorization")

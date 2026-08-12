@@ -58,6 +58,7 @@ func TestAuthorizeRequestNonce(t *testing.T) {
 		}, oauth2.ServerConfig{}, http.DefaultClient)
 		require.NoError(t, err)
 		require.NotEmpty(t, r.Form.Get("nonce"))
+		require.Equal(t, r.Form.Get("nonce"), r.Nonce)
 		require.NotEmpty(t, r.Form.Get("state"))
 	})
 
@@ -91,6 +92,7 @@ func TestAuthorizeRequestNonce(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, tc.wantForm, r.Form.Get("nonce"))
+			require.Equal(t, tc.wantForm, r.Nonce)
 			require.NotEmpty(t, r.Form.Get("state"))
 
 			if tc.pkce {
@@ -194,10 +196,11 @@ func TestRequestDeviceAuthorizationNonce(t *testing.T) {
 			}
 			sconfig := oauth2.ServerConfig{DeviceAuthorizationEndpoint: srv.URL}
 
-			_, _, err := oauth2.RequestDeviceAuthorization(context.Background(), cconfig, sconfig, &http.Client{})
+			req, _, err := oauth2.RequestDeviceAuthorization(context.Background(), cconfig, sconfig, &http.Client{})
 			require.NoError(t, err)
 
 			require.Equal(t, tc.wantForm, got.Get("nonce"))
+			require.Equal(t, tc.wantForm, req.Nonce)
 		})
 	}
 }
