@@ -25,6 +25,7 @@ type ServerConfig struct {
 	} `json:"mtls_endpoint_aliases"`
 
 	JWKsURI string `json:"jwks_uri"`
+	Issuer  string `json:"issuer"`
 }
 
 func (c ServerConfig) IsConfigured() bool {

@@ -23,6 +23,7 @@ type Request struct {
 	SigningKey    interface{}
 	EncryptionKey interface{}
 	Cert          *x509.Certificate
+	Nonce         string
 }
 
 func (r *Request) AuthorizeRequest(
@@ -30,11 +31,17 @@ func (r *Request) AuthorizeRequest(
 	sconfig ServerConfig,
 	hc *http.Client,
 ) (codeVerifier string, err error) {
+	nonce := cconfig.Nonce
+	if nonce == "" {
+		nonce = shortuuid.New()
+	}
+
+	r.Nonce = nonce
 	r.Form = url.Values{
 		"client_id":    {cconfig.ClientID},
 		"redirect_uri": {cconfig.RedirectURL},
 		"state":        {shortuuid.New()},
-		"nonce":        {shortuuid.New()},
+		"nonce":        {nonce},
 	}
 
 	if len(cconfig.ResponseType) > 0 {

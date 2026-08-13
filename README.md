@@ -11,6 +11,10 @@ servers. Its goal is to make it easy to fetch access tokens using any grant type
 or client authentication method. It is compliant with almost all basic and
 advanced OAuth 2.0, OIDC, OIDF FAPI and JWT profiles.
 
+This is a fork of [cloudentity/oauth2c](https://github.com/cloudentity/oauth2c),
+maintained independently for other use cases. oauth2c was created by Cloudentity;
+this fork exists thanks to their work.
+
 ![demo](https://user-images.githubusercontent.com/909896/176916616-36d803ef-832a-4bd8-ba8d-f6689e31ed22.gif)
 
 ## Features
@@ -22,6 +26,7 @@ advanced OAuth 2.0, OIDC, OIDF FAPI and JWT profiles.
   JWT**, **private key JWT**, **TLS client auth** client authentication methods
 - passing request parameters as plaintext, signed, and/or encrypted JWT
 - support for **Proof Key for Code Exchange** (**PKCE**)
+- support for OpenID Connect **nonce**
 - support for **JWT Secured Authorization Response Mode** (**JARM**)
 - support for **Pushed Authorization Requests** (**PAR**)
 - support for **Demonstration of Proof of Possession** (**DPoP**)
@@ -114,6 +119,7 @@ The available flags are:
       --mtls-token-endpoint string                          server's mtls token endpoint
       --no-browser                                          do not open browser
       --no-prompt                                           disable prompt
+      --nonce string                                        openid connect nonce
       --par                                                 enable pushed authorization requests (PAR)
       --password string                                     resource owner password credentials grant flow password
       --pkce                                                enable proof key for code exchange (PKCE)
@@ -582,6 +588,34 @@ oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
 ```
 
 [Learn more about authorization code flow with pkce](https://cloudentity.com/developers/basics/oauth-grant-types/authorization-code-with-pkce/)
+
+#### Nonce
+
+OpenID Connect `nonce` associates a client session with an ID Token and
+mitigates replay attacks. Authorization requests still send a generated `nonce`
+by default. When `--nonce` is set, oauth2c uses that value instead. If an ID
+Token is returned, oauth2c verifies its signature and `iss`, `aud`, `exp`, and
+`iat` claims, then fails when the `nonce` claim is missing or does not match.
+
+```sh
+oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
+  --client-id db5e375e7b634095b24bbb683fcb955b \
+  --grant-type authorization_code \
+  --auth-method none \
+  --scopes openid \
+  --pkce \
+  --nonce n-0S6_WzA2Mj
+```
+
+```sh
+oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
+  --client-id db5e375e7b634095b24bbb683fcb955b \
+  --grant-type implicit \
+  --response-types id_token \
+  --response-mode form_post \
+  --scopes openid \
+  --nonce n-0S6_WzA2Mj
+```
 
 #### JARM
 

@@ -7,7 +7,9 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -115,6 +117,7 @@ func LogInputData(cc oauth2.ClientConfig) {
 		{"Response types", strings.Join(cc.ResponseType, ", ")},
 		{"Response mode", cc.ResponseMode},
 		{"PKCE", strconv.FormatBool(cc.PKCE)},
+		{"Nonce", cc.Nonce},
 		{"Client ID", cc.ClientID},
 		{"Client secret", cc.ClientSecret},
 		{"Username", cc.Username},
@@ -270,6 +273,29 @@ func LogTokenPayloadln(response oauth2.TokenResponse) {
 
 	LogTokenPayload(response)
 	pterm.Println()
+}
+
+func CheckNonce(expected, idToken string, clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
+	if expected == "" || idToken == "" {
+		return nil
+	}
+
+	got, err := oauth2.CheckIDTokenNonce(idToken, expected, serverConfig, clientConfig, hc)
+
+	if !silent {
+		received := got
+		switch {
+		case errors.Is(err, oauth2.ErrIDTokenNonceMissing):
+			received = "(missing)"
+		case err != nil && got == "":
+			received = "(unverified)"
+		}
+
+		LogBox("Nonce", "nonce = %s\nID Token nonce = %s\nmatch = %t", expected, received, err == nil)
+		pterm.Println()
+	}
+
+	return err
 }
 
 func LogAuthMethod(config oauth2.ClientConfig) {

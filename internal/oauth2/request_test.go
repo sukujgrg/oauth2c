@@ -49,6 +49,64 @@ func TestAuthorizeRequestResource(t *testing.T) {
 	}
 }
 
+func TestAuthorizeRequestNonce(t *testing.T) {
+	t.Run("unset generates nonce", func(t *testing.T) {
+		r := &oauth2.Request{}
+		_, err := r.AuthorizeRequest(oauth2.ClientConfig{
+			ClientID:    "test-client",
+			RedirectURL: "http://localhost/callback",
+		}, oauth2.ServerConfig{}, http.DefaultClient)
+		require.NoError(t, err)
+		require.NotEmpty(t, r.Form.Get("nonce"))
+		require.Equal(t, r.Form.Get("nonce"), r.Nonce)
+		require.NotEmpty(t, r.Form.Get("state"))
+	})
+
+	tests := map[string]struct {
+		nonce    string
+		pkce     bool
+		wantForm string
+	}{
+		"set": {
+			nonce:    "n-0S6_WzA2Mj",
+			wantForm: "n-0S6_WzA2Mj",
+		},
+		"set with pkce": {
+			nonce:    "n-0S6_WzA2Mj",
+			pkce:     true,
+			wantForm: "n-0S6_WzA2Mj",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := &oauth2.Request{}
+			cconfig := oauth2.ClientConfig{
+				ClientID:    "test-client",
+				RedirectURL: "http://localhost/callback",
+				Nonce:       tc.nonce,
+				PKCE:        tc.pkce,
+			}
+
+			codeVerifier, err := r.AuthorizeRequest(cconfig, oauth2.ServerConfig{}, http.DefaultClient)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.wantForm, r.Form.Get("nonce"))
+			require.Equal(t, tc.wantForm, r.Nonce)
+			require.NotEmpty(t, r.Form.Get("state"))
+
+			if tc.pkce {
+				require.NotEmpty(t, codeVerifier)
+				require.NotEmpty(t, r.Form.Get("code_challenge"))
+				require.Equal(t, "S256", r.Form.Get("code_challenge_method"))
+			} else {
+				require.Empty(t, codeVerifier)
+				require.Empty(t, r.Form.Get("code_challenge"))
+			}
+		})
+	}
+}
+
 func TestRequestTokenResource(t *testing.T) {
 	tests := map[string]struct {
 		resource []string
@@ -97,6 +155,52 @@ func TestRequestTokenResource(t *testing.T) {
 			require.NoError(t, err)
 
 			require.Equal(t, tc.expected, got["resource"])
+		})
+	}
+}
+
+func TestRequestDeviceAuthorizationNonce(t *testing.T) {
+	tests := map[string]struct {
+		nonce    string
+		wantForm string
+	}{
+		"unset": {
+			nonce:    "",
+			wantForm: "",
+		},
+		"set": {
+			nonce:    "n-0S6_WzA2Mj",
+			wantForm: "n-0S6_WzA2Mj",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var got url.Values
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+
+				got, err = url.ParseQuery(string(body))
+				require.NoError(t, err)
+
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"device_code":"dev","user_code":"user","verification_uri":"https://example.com/device","expires_in":600}`))
+			}))
+			defer srv.Close()
+
+			cconfig := oauth2.ClientConfig{
+				ClientID: "test-client",
+				Nonce:    tc.nonce,
+			}
+			sconfig := oauth2.ServerConfig{DeviceAuthorizationEndpoint: srv.URL}
+
+			req, _, err := oauth2.RequestDeviceAuthorization(context.Background(), cconfig, sconfig, &http.Client{})
+			require.NoError(t, err)
+
+			require.Equal(t, tc.wantForm, got.Get("nonce"))
+			require.Equal(t, tc.wantForm, req.Nonce)
 		})
 	}
 }
