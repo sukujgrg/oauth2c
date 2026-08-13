@@ -34,6 +34,7 @@ func TestLogAccessTokenPayload(t *testing.T) {
 		LogAccessTokenPayload("access_token", token)
 
 		contains(t, output.String(), "access_token:")
+		contains(t, output.String(), "  {")
 		contains(t, output.String(), `"sub"`)
 		contains(t, output.String(), `"user"`)
 		notContains(t, output.String(), "(opaque)")
@@ -124,6 +125,26 @@ func TestLogRequest(t *testing.T) {
 	notContains(t, got, "Query params:")
 	notContains(t, got, "Headers:")
 	notContains(t, got, "Form post:")
+}
+
+func TestLogRequestAndResponseIndentsResponse(t *testing.T) {
+	output := captureLogOutput(t)
+	u, err := url.Parse("https://example.com/oauth/token")
+	noErr(t, err)
+
+	LogRequestAndResponse(oauth2.Request{
+		Method: "POST",
+		URL:    u,
+		Form:   url.Values{"grant_type": {"client_credentials"}},
+	}, map[string]any{"token_type": "Bearer"})
+
+	got := output.String()
+	contains(t, got, "POST https://example.com/oauth/token")
+	contains(t, got, "  grant_type: client_credentials")
+	contains(t, got, "  response:")
+	contains(t, got, "    {")
+	contains(t, got, `"token_type"`)
+	notContains(t, got, "\nresponse:")
 }
 
 func TestLogPKCE(t *testing.T) {
