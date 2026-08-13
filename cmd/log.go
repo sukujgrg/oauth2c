@@ -27,7 +27,7 @@ func logln() {
 		return
 	}
 
-	fmt.Fprintln(logOut)
+	_, _ = fmt.Fprintln(logOut)
 }
 
 func logf(msg string, args ...interface{}) {
@@ -35,7 +35,7 @@ func logf(msg string, args ...interface{}) {
 		return
 	}
 
-	fmt.Fprintf(logOut, msg+"\n", args...)
+	_, _ = fmt.Fprintf(logOut, msg+"\n", args...)
 }
 
 func logKV(key, value string) {
@@ -74,7 +74,7 @@ func LogError(err error) {
 		return
 	}
 
-	fmt.Fprintf(logOut, "error: %s\n", err)
+	_, _ = fmt.Fprintf(logOut, "error: %s\n", err)
 }
 
 func LogWarning(msg string) {
@@ -359,7 +359,7 @@ func LogSubjectTokenAndActorToken(request oauth2.Request) {
 
 func LogAuthURL(url string, noBrowser bool) {
 	if noBrowser && silent {
-		fmt.Fprintln(os.Stderr, url)
+		_, _ = fmt.Fprintln(os.Stderr, url)
 		return
 	}
 
