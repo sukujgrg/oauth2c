@@ -11,6 +11,10 @@ servers. Its goal is to make it easy to fetch access tokens using any grant type
 or client authentication method. It is compliant with almost all basic and
 advanced OAuth 2.0, OIDC, OIDF FAPI and JWT profiles.
 
+This is a fork of [cloudentity/oauth2c](https://github.com/cloudentity/oauth2c),
+maintained independently for other use cases. oauth2c was created by Cloudentity;
+this fork exists thanks to their work.
+
 ![demo](https://user-images.githubusercontent.com/909896/176916616-36d803ef-832a-4bd8-ba8d-f6689e31ed22.gif)
 
 ## Features
