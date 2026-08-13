@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -119,19 +120,22 @@ func LogInputData(cc oauth2.ClientConfig) {
 	endSection()
 }
 
-func compactJSON(value interface{}) string {
-	output, err := json.Marshal(value)
-	if err != nil {
-		LogError(err)
-		return ""
+func logJSON(key string, value interface{}) {
+	if silent {
+		return
 	}
 
-	return string(output)
-}
+	output, err := json.Marshal(value, jsontext.WithIndent("  "))
+	if err != nil {
+		LogError(err)
+		return
+	}
 
-func logJSON(key string, value interface{}) {
-	if s := compactJSON(value); s != "" {
-		logKV(key, s)
+	if key != "" {
+		logf("%s:", key)
+	}
+	for line := range strings.SplitSeq(strings.TrimRight(string(output), "\n"), "\n") {
+		logf("  %s", line)
 	}
 }
 
@@ -315,11 +319,12 @@ func LogRequestObject(r oauth2.Request) {
 	}
 
 	if encryptedToken, err = jose.ParseEncrypted(request, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); err == nil {
-		logKV("request_object", fmt.Sprintf("JWE-%s(JWT-%s) %s", encryptedToken.Header.Algorithm, token.Headers[0].Algorithm, compactJSON(requestClaims)))
+		logKV("request_object", fmt.Sprintf("JWE-%s(JWT-%s)", encryptedToken.Header.Algorithm, token.Headers[0].Algorithm))
 	} else {
-		logKV("request_object", fmt.Sprintf("JWT-%s %s", token.Headers[0].Algorithm, compactJSON(requestClaims)))
+		logKV("request_object", fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
 	}
 
+	logJSON("", requestClaims)
 	endSection()
 }
 
@@ -340,7 +345,8 @@ func LogAssertion(request oauth2.Request, name string) {
 		return
 	}
 
-	logKV(name, fmt.Sprintf("JWT-%s %s", token.Headers[0].Algorithm, compactJSON(claims)))
+	logKV(name, fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
+	logJSON("", claims)
 	endSection()
 }
 

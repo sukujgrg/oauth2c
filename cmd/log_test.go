@@ -37,8 +37,6 @@ func TestLogAccessTokenPayload(t *testing.T) {
 		contains(t, output.String(), `"sub"`)
 		contains(t, output.String(), `"user"`)
 		notContains(t, output.String(), "(opaque)")
-		notContains(t, output.String(), "\n{")
-		notContains(t, output.String(), "\n  {")
 	})
 
 	t.Run("jwe token", func(t *testing.T) {
