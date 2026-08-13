@@ -238,7 +238,6 @@ func LogRequestAndResponseln(request oauth2.Request, response interface{}) {
 
 func LogTokenPayload(response oauth2.TokenResponse) {
 	var (
-		atClaims map[string]interface{}
 		idClaims map[string]interface{}
 		err      error
 	)
@@ -247,14 +246,7 @@ func LogTokenPayload(response oauth2.TokenResponse) {
 		return
 	}
 
-	if response.AccessToken != "" {
-		if _, atClaims, err = oauth2.UnsafeParseJWT(response.AccessToken); err != nil {
-			pterm.Error.Println(err)
-		} else {
-			pterm.Println(pterm.FgGray.Sprint("Access token:"))
-			LogJson(atClaims)
-		}
-	}
+	LogAccessTokenPayload("Access token", response.AccessToken)
 
 	if response.IDToken != "" {
 		if _, idClaims, err = oauth2.UnsafeParseJWT(response.IDToken); err != nil {
@@ -264,6 +256,21 @@ func LogTokenPayload(response oauth2.TokenResponse) {
 			LogJson(idClaims)
 		}
 	}
+}
+
+func LogAccessTokenPayload(label, token string) {
+	if silent || token == "" {
+		return
+	}
+
+	_, claims, err := oauth2.UnsafeParseJWT(token)
+	if err != nil {
+		pterm.Println(pterm.FgGray.Sprintf("%s: (opaque or non-JWT)", label))
+		return
+	}
+
+	pterm.Println(pterm.FgGray.Sprintf("%s:", label))
+	LogJson(claims)
 }
 
 func LogTokenPayloadln(response oauth2.TokenResponse) {
@@ -465,34 +472,16 @@ func LogKey(name string, key interface{}) {
 
 func LogSubjectTokenAndActorToken(request oauth2.Request) {
 	var (
-		subjectToken       = request.Form.Get("subject_token")
-		actorToken         = request.Form.Get("actor_token")
-		subjectTokenClaims map[string]interface{}
-		actorTokenClaims   map[string]interface{}
-		err                error
+		subjectToken = request.Form.Get("subject_token")
+		actorToken   = request.Form.Get("actor_token")
 	)
 
 	if silent {
 		return
 	}
 
-	if subjectToken != "" {
-		if _, subjectTokenClaims, err = oauth2.UnsafeParseJWT(subjectToken); err != nil {
-			pterm.Error.Println(err)
-		} else {
-			pterm.Println(pterm.FgGray.Sprint("Subject token:"))
-			LogJson(subjectTokenClaims)
-		}
-	}
-
-	if actorToken != "" {
-		if _, actorTokenClaims, err = oauth2.UnsafeParseJWT(actorToken); err != nil {
-			pterm.Error.Println(err)
-		} else {
-			pterm.Println(pterm.FgGray.Sprint("Actor token:"))
-			LogJson(actorTokenClaims)
-		}
-	}
+	LogAccessTokenPayload("Subject token", subjectToken)
+	LogAccessTokenPayload("Actor token", actorToken)
 
 	if subjectToken != "" || actorToken != "" {
 		pterm.Println()
