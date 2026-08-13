@@ -1,10 +1,10 @@
 package oauth2
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/pkg/errors"
 )
 
 type EncrypterProvider func() (jose.Encrypter, interface{}, error)
@@ -14,11 +14,11 @@ func JWEEncrypter(keyPath string, hc *http.Client) EncrypterProvider {
 		var key jose.JSONWebKey
 
 		if keyPath == "" {
-			return nil, nil, errors.New("no encryption key path")
+			return nil, nil, fmt.Errorf("no encryption key path")
 		}
 
 		if key, err = ReadKey(EncryptionKey, keyPath, hc); err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to read encryption key from %s", keyPath)
+			return nil, nil, fmt.Errorf("failed to read encryption key from %s: %w", keyPath, err)
 		}
 
 		if encrypter, err = jose.NewEncrypter(
@@ -29,7 +29,7 @@ func JWEEncrypter(keyPath string, hc *http.Client) EncrypterProvider {
 			},
 			(&jose.EncrypterOptions{}).WithType("JWT").WithContentType("JWT"),
 		); err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to create an encrypter")
+			return nil, nil, fmt.Errorf("failed to create an encrypter: %w", err)
 		}
 
 		return encrypter, key.Key, nil

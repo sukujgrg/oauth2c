@@ -1,150 +1,115 @@
 package cmd
 
 import (
-	"bytes"
-	"crypto/ecdsa"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/json"
-	"encoding/pem"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cli/browser"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/go-playground/validator/v10"
 
-	"github.com/cloudentity/oauth2c/internal/oauth2"
-	"github.com/grantae/certinfo"
-	"github.com/pterm/pterm"
-	"github.com/tidwall/pretty"
+	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
-func init() {
-	pterm.SetDefaultOutput(os.Stderr)
+var logOut io.Writer = os.Stderr
+
+func logln() {
+	if silent {
+		return
+	}
+
+	_, _ = fmt.Fprintln(logOut)
+}
+
+func logf(msg string, args ...interface{}) {
+	if silent {
+		return
+	}
+
+	_, _ = fmt.Fprintf(logOut, msg+"\n", args...)
+}
+
+func logKV(key, value string) {
+	if value == "" {
+		return
+	}
+
+	logf("%s: %s", key, value)
+}
+
+func logBlock(name string, rows [][2]string) {
+	if silent {
+		return
+	}
+
+	logf("%s:", name)
+	for _, row := range rows {
+		if row[1] == "" {
+			continue
+		}
+		logf("  %s: %s", row[0], row[1])
+	}
+	logln()
 }
 
 func Logln() {
-	if silent {
-		return
-	}
-
-	pterm.Println()
+	logln()
 }
 
-func Logfln(msg string, args ...interface{}) {
-	if silent {
-		return
-	}
-
-	pterm.Printfln(msg, args...)
-}
-
-func LogHeader(msg string) {
-	if silent {
-		return
-	}
-
-	pterm.DefaultHeader.WithFullWidth().Println(msg)
-}
-
-func LogSection(msg string) {
-	if silent {
-		return
-	}
-
-	pterm.DefaultSection.Println(msg)
-}
-
-func LogAction(msg string) func(string) {
-	if silent {
-		return func(string) {}
-	}
-
-	done, _ := pterm.DefaultSpinner.Start(msg)
-	return func(s string) {
-		done.Success(s)
-		pterm.Println()
-	}
-}
-
-func LogBox(title string, msg string, args ...interface{}) {
-	if silent {
-		return
-	}
-
-	pterm.DefaultBox.WithTitle(title).Printfln(msg, args...)
+func LogWaiting(msg string) {
+	logKV("waiting", msg)
 }
 
 func LogError(err error) {
-	switch e := err.(type) {
-	case validator.ValidationErrors:
-		trans := e.Translate(Trans)
-
-		for _, v := range trans {
-			pterm.Error.Println(v)
-		}
-	default:
-		pterm.Error.PrintOnError(err)
+	if err == nil {
+		return
 	}
+
+	_, _ = fmt.Fprintf(logOut, "error: %s\n", err)
 }
 
 func LogWarning(msg string) {
-	if silent {
-		return
-	}
-
-	pterm.Warning.Println(msg)
+	logf("warning: %s", msg)
 }
 
 func LogInputData(cc oauth2.ClientConfig) {
-	if silent {
-		return
+	rows := [][2]string{
+		{"issuer_url", cc.IssuerURL},
+		{"grant_type", cc.GrantType},
+		{"auth_method", cc.AuthMethod},
+		{"scopes", strings.Join(cc.Scopes, ", ")},
+		{"acr_values", strings.Join(cc.ACRValues, ", ")},
+		{"audience", strings.Join(cc.Audience, ", ")},
+		{"response_types", strings.Join(cc.ResponseType, ", ")},
+		{"response_mode", cc.ResponseMode},
+		{"pkce", strconv.FormatBool(cc.PKCE)},
+		{"nonce", cc.Nonce},
+		{"client_id", cc.ClientID},
+		{"client_secret", cc.ClientSecret},
+		{"username", cc.Username},
+		{"password", cc.Password},
+		{"refresh_token", cc.RefreshToken},
+		{"signing_key", cc.SigningKey},
+		{"subject_token_type", cc.SubjectTokenType},
+		{"actor_token_type", cc.ActorTokenType},
+		{"tls_cert", cc.TLSCert},
+		{"tls_key", cc.TLSKey},
+		{"tls_root_ca", cc.TLSRootCA},
 	}
 
-	data := pterm.TableData{
-		{"Issuer URL", cc.IssuerURL},
-		{"Grant type", cc.GrantType},
-		{"Auth method", cc.AuthMethod},
-		{"Scopes", strings.Join(cc.Scopes, ", ")},
-		{"ACR Values", strings.Join(cc.ACRValues, ", ")},
-		{"Audience", strings.Join(cc.Audience, ", ")},
-		{"Response types", strings.Join(cc.ResponseType, ", ")},
-		{"Response mode", cc.ResponseMode},
-		{"PKCE", strconv.FormatBool(cc.PKCE)},
-		{"Nonce", cc.Nonce},
-		{"Client ID", cc.ClientID},
-		{"Client secret", cc.ClientSecret},
-		{"Username", cc.Username},
-		{"Password", cc.Password},
-		{"Refresh token", cc.RefreshToken},
-		{"Signing key", cc.SigningKey},
-		{"Subject token type", cc.SubjectTokenType},
-		{"Actors token type", cc.ActorTokenType},
-		{"TLS client cert", cc.TLSCert},
-		{"TLS client key", cc.TLSKey},
-		{"TLS root CA", cc.TLSRootCA},
+	for _, row := range rows {
+		logKV(row[0], row[1])
 	}
-
-	nonEmptyData := pterm.TableData{}
-
-	for _, vs := range data {
-		if vs[1] != "" {
-			nonEmptyData = append(nonEmptyData, vs)
-		}
-	}
-
-	if err := pterm.DefaultTable.WithData(nonEmptyData).WithBoxed().Render(); err != nil {
-		pterm.Error.Println(err)
-		return
-	}
-
-	pterm.Println()
+	logln()
 }
 
 func LogJson(value interface{}) {
@@ -152,13 +117,15 @@ func LogJson(value interface{}) {
 		return
 	}
 
-	output, err := json.Marshal(value)
+	output, err := json.Marshal(value, jsontext.WithIndent("  "))
 	if err != nil {
-		pterm.Error.Println(err)
+		LogError(err)
 		return
 	}
 
-	pterm.Print(string(pretty.Color(pretty.Pretty(output), nil)))
+	for line := range strings.SplitSeq(strings.TrimRight(string(output), "\n"), "\n") {
+		logf("  %s", line)
+	}
 }
 
 func LogRequest(r oauth2.Request) {
@@ -171,40 +138,36 @@ func LogRequest(r oauth2.Request) {
 	}
 
 	if r.URL.Scheme != "" {
-		pterm.Println(pterm.FgLightMagenta.Sprint(r.Method) + " " + pterm.FgYellow.Sprintf("%s://%s%s", r.URL.Scheme, r.URL.Host, r.URL.Path))
+		logf("%s %s://%s%s", r.Method, r.URL.Scheme, r.URL.Host, r.URL.Path)
 	} else {
-		pterm.Println(pterm.FgLightMagenta.Sprint(r.Method) + " " + pterm.FgYellow.Sprint(r.URL.Path))
+		logf("%s %s", r.Method, r.URL.Path)
 	}
 
-	if len(r.Headers) > 0 {
-		pterm.Println(pterm.FgGray.Sprint("Headers:"))
-	}
-
-	for k, vs := range r.Headers {
-		pterm.Println(pterm.FgLightBlue.Sprintf("  %s: ", k) + strings.Join(vs, ", "))
-	}
-
-	if len(r.URL.Query()) > 0 {
-		pterm.Println(pterm.FgGray.Sprint("Query params:"))
-	}
-
-	for k, vs := range r.URL.Query() {
-		pterm.Println(pterm.FgLightBlue.Sprintf("  %s: ", k) + strings.Join(vs, ", "))
-	}
-
-	if len(r.Form) > 0 {
-		pterm.Println(pterm.FgGray.Sprint("Form post:"))
-	}
-
-	for k, vs := range r.Form {
-		pterm.Println(pterm.FgLightBlue.Sprintf("  %s: ", k) + strings.Join(vs, ", "))
-	}
+	logPairs(r.Headers)
+	logPairs(r.URL.Query())
+	logPairs(r.Form)
 
 	if r.Cert != nil {
-		if info, err := certinfo.CertificateText(r.Cert); err == nil {
-			pterm.Println()
-			pterm.FgGray.Println(info)
-		}
+		logf("  certificate_subject: %s", r.Cert.Subject)
+		logf("  certificate_issuer: %s", r.Cert.Issuer)
+		logf("  certificate_not_before: %s", r.Cert.NotBefore.UTC().Format(time.RFC3339))
+		logf("  certificate_not_after: %s", r.Cert.NotAfter.UTC().Format(time.RFC3339))
+	}
+}
+
+func logPairs(values map[string][]string) {
+	if len(values) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	for _, k := range keys {
+		logf("  %s: %s", k, strings.Join(values[k], ", "))
 	}
 }
 
@@ -214,7 +177,7 @@ func LogRequestln(request oauth2.Request) {
 	}
 
 	LogRequest(request)
-	pterm.Println()
+	logln()
 }
 
 func LogRequestAndResponse(request oauth2.Request, response interface{}) {
@@ -223,39 +186,22 @@ func LogRequestAndResponse(request oauth2.Request, response interface{}) {
 	}
 
 	LogRequest(request)
-	pterm.Println(pterm.FgGray.Sprint("Response:"))
+	logf("response:")
 	LogJson(response)
+	logln()
 }
 
 func LogRequestAndResponseln(request oauth2.Request, response interface{}) {
-	if silent {
-		return
-	}
-
 	LogRequestAndResponse(request, response)
-	pterm.Println()
 }
 
 func LogTokenPayload(response oauth2.TokenResponse) {
-	var (
-		idClaims map[string]interface{}
-		err      error
-	)
-
 	if silent {
 		return
 	}
 
-	LogAccessTokenPayload("Access token", response.AccessToken)
-
-	if response.IDToken != "" {
-		if _, idClaims, err = oauth2.UnsafeParseJWT(response.IDToken); err != nil {
-			pterm.Error.Println(err)
-		} else {
-			pterm.Println(pterm.FgGray.Sprint("ID token:"))
-			LogJson(idClaims)
-		}
-	}
+	LogAccessTokenPayload("access_token", response.AccessToken)
+	LogAccessTokenPayload("id_token", response.IDToken)
 }
 
 func LogAccessTokenPayload(label, token string) {
@@ -264,13 +210,18 @@ func LogAccessTokenPayload(label, token string) {
 	}
 
 	_, claims, err := oauth2.UnsafeParseJWT(token)
-	if err != nil {
-		pterm.Println(pterm.FgGray.Sprintf("%s: (opaque or non-JWT)", label))
+	if err == nil {
+		logf("%s:", label)
+		LogJson(claims)
 		return
 	}
 
-	pterm.Println(pterm.FgGray.Sprintf("%s:", label))
-	LogJson(claims)
+	if _, encErr := jose.ParseEncrypted(token, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); encErr == nil {
+		logKV(label, "(jwe)")
+		return
+	}
+
+	logKV(label, "(opaque)")
 }
 
 func LogTokenPayloadln(response oauth2.TokenResponse) {
@@ -279,7 +230,18 @@ func LogTokenPayloadln(response oauth2.TokenResponse) {
 	}
 
 	LogTokenPayload(response)
-	pterm.Println()
+	logln()
+}
+
+func LogPKCE(codeVerifier string) {
+	if codeVerifier == "" {
+		return
+	}
+
+	logBlock("pkce", [][2]string{
+		{"code_verifier", codeVerifier},
+		{"code_challenge", "S256(code_verifier)"},
+	})
 }
 
 func CheckNonce(expected, idToken string, clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
@@ -298,34 +260,34 @@ func CheckNonce(expected, idToken string, clientConfig oauth2.ClientConfig, serv
 			received = "(unverified)"
 		}
 
-		LogBox("Nonce", "nonce = %s\nID Token nonce = %s\nmatch = %t", expected, received, err == nil)
-		pterm.Println()
+		logBlock("nonce", [][2]string{
+			{"sent", expected},
+			{"id_token", received},
+			{"match", strconv.FormatBool(err == nil)},
+		})
 	}
 
 	return err
 }
 
 func LogAuthMethod(config oauth2.ClientConfig) {
-	if silent {
+	if config.AuthMethod != oauth2.ClientSecretBasicAuthMethod {
 		return
 	}
 
-	switch config.AuthMethod {
-	case oauth2.ClientSecretBasicAuthMethod:
-		pterm.DefaultBox.WithTitle("Client Secret Basic").Printfln("Authorization = Basic BASE64-ENCODE(ClientID:ClientSecret)")
-		pterm.Println()
-	}
+	logBlock("auth", [][2]string{
+		{"authorization", "Basic BASE64(client_id:client_secret)"},
+	})
 }
 
 func LogJARM(request oauth2.Request) {
-	if silent {
+	if silent || len(request.JARM) == 0 {
 		return
 	}
 
-	if len(request.JARM) != 0 {
-		pterm.Println(pterm.FgGray.Sprint("JARM:"))
-		LogJson(request.JARM)
-	}
+	logf("jarm:")
+	LogJson(request.JARM)
+	logln()
 }
 
 func LogRequestObject(r oauth2.Request) {
@@ -341,37 +303,26 @@ func LogRequestObject(r oauth2.Request) {
 		request = r.Form.Get("request")
 	}
 
-	if silent {
+	if silent || request == "" {
 		return
 	}
 
-	if request != "" {
-		if token, requestClaims, err = oauth2.UnsafeParseJWT(r.RequestObject); err != nil {
-			pterm.Error.Println(err)
-		} else {
-			if encryptedToken, err = jose.ParseEncrypted(request, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); err == nil {
-				pterm.DefaultBox.WithTitle("Request object").Printfln("request = JWE-%s(JWT-%s(payload))", encryptedToken.Header.Algorithm, token.Headers[0].Algorithm)
-			} else {
-				pterm.DefaultBox.WithTitle("Request object").Printfln("request = JWT-%s(payload)", token.Headers[0].Algorithm)
-			}
-
-			pterm.Println()
-			pterm.Println("Payload")
-			LogJson(requestClaims)
-			pterm.Println()
-
-			if r.SigningKey != nil {
-				LogKey("Signing key", r.SigningKey)
-			}
-
-			if r.EncryptionKey != nil {
-				LogKey("Encryption key", r.EncryptionKey)
-			}
-		}
+	if token, requestClaims, err = oauth2.UnsafeParseJWT(r.RequestObject); err != nil {
+		LogError(err)
+		return
 	}
+
+	if encryptedToken, err = jose.ParseEncrypted(request, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); err == nil {
+		logKV("request_object", fmt.Sprintf("JWE-%s(JWT-%s)", encryptedToken.Header.Algorithm, token.Headers[0].Algorithm))
+	} else {
+		logKV("request_object", fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
+	}
+
+	LogJson(requestClaims)
+	logln()
 }
 
-func LogAssertion(request oauth2.Request, title string, name string) {
+func LogAssertion(request oauth2.Request, name string) {
 	var (
 		assertion = request.Form.Get(name)
 		token     *jwt.JSONWebToken
@@ -379,124 +330,42 @@ func LogAssertion(request oauth2.Request, title string, name string) {
 		err       error
 	)
 
-	if silent {
-		return
-	}
-
-	if assertion == "" {
+	if silent || assertion == "" {
 		return
 	}
 
 	if token, claims, err = oauth2.UnsafeParseJWT(assertion); err != nil {
-		pterm.Error.Println(err)
+		LogError(err)
 		return
 	}
 
-	pterm.DefaultBox.WithTitle(title).Printfln("%s = JWT-%s(payload)", name, token.Headers[0].Algorithm)
-	pterm.Println()
-	pterm.Println("Payload")
+	logKV(name, fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
 	LogJson(claims)
-	pterm.Println("")
-
-	LogKey("Signing key", request.SigningKey)
-}
-
-func LogKey(name string, key interface{}) {
-	var err error
-
-	pterm.Println(name)
-
-	switch key := key.(type) {
-	case *rsa.PublicKey:
-		p := bytes.Buffer{}
-
-		if err = pem.Encode(&p, &pem.Block{
-			Type:  "RSA PUBLIC KEY",
-			Bytes: x509.MarshalPKCS1PublicKey(key),
-		}); err != nil {
-			pterm.Error.Println(err)
-		}
-
-		pterm.FgGray.Printfln("%s", p.String())
-	case *rsa.PrivateKey:
-		p := bytes.Buffer{}
-
-		if err = pem.Encode(&p, &pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: x509.MarshalPKCS1PrivateKey(key),
-		}); err != nil {
-			pterm.Error.Println(err)
-		}
-
-		pterm.FgGray.Printfln("%s", p.String())
-	case *ecdsa.PublicKey:
-		b, err := x509.MarshalPKIXPublicKey(key)
-		if err != nil {
-			pterm.Error.Println(err)
-		}
-
-		p := bytes.Buffer{}
-
-		if err = pem.Encode(&p, &pem.Block{
-			Type:  "EC PUBLIC KEY",
-			Bytes: b,
-		}); err != nil {
-			pterm.Error.Println(err)
-		}
-
-		pterm.FgGray.Printfln("%s", p.String())
-	case *ecdsa.PrivateKey:
-		b, err := x509.MarshalECPrivateKey(key)
-		if err != nil {
-			pterm.Error.Println(err)
-		}
-
-		p := bytes.Buffer{}
-
-		if err = pem.Encode(&p, &pem.Block{
-			Type:  "EC PRIVATE KEY",
-			Bytes: b,
-		}); err != nil {
-			pterm.Error.Println(err)
-		}
-
-		pterm.FgGray.Printfln("%s", p.String())
-	case []byte:
-		pterm.FgGray.Println(string(key))
-	case string:
-		pterm.FgGray.Println(key)
-	}
-
-	pterm.Println()
+	logln()
 }
 
 func LogSubjectTokenAndActorToken(request oauth2.Request) {
-	var (
-		subjectToken = request.Form.Get("subject_token")
-		actorToken   = request.Form.Get("actor_token")
-	)
-
 	if silent {
 		return
 	}
 
-	LogAccessTokenPayload("Subject token", subjectToken)
-	LogAccessTokenPayload("Actor token", actorToken)
+	LogAccessTokenPayload("subject_token", request.Form.Get("subject_token"))
+	LogAccessTokenPayload("actor_token", request.Form.Get("actor_token"))
 
-	if subjectToken != "" || actorToken != "" {
-		pterm.Println()
+	if request.Form.Get("subject_token") != "" || request.Form.Get("actor_token") != "" {
+		logln()
 	}
 }
 
 func LogAuthURL(url string, noBrowser bool) {
 	if noBrowser && silent {
-		fmt.Fprintln(os.Stderr, url)
-	} else {
-		Logfln("\nGo to the following URL:\n\n%s", url)
+		_, _ = fmt.Fprintln(os.Stderr, url)
+		return
 	}
 
+	logKV("url", url)
+
 	if !noBrowser {
-		Logfln("\nOpening browser...")
 		if err := browser.OpenURL(url); err != nil {
 			LogError(err)
 		}

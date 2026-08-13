@@ -3,7 +3,7 @@ package cmd
 import (
 	"net/http"
 
-	"github.com/cloudentity/oauth2c/internal/oauth2"
+	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
 func (c *OAuth2Cmd) ImplicitGrantFlow(clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
@@ -13,23 +13,15 @@ func (c *OAuth2Cmd) ImplicitGrantFlow(clientConfig oauth2.ClientConfig, serverCo
 		err              error
 	)
 
-	LogHeader("Implicit Flow")
-
-	// authorize endpoint
-	LogSection("Request authorization")
-
 	if authorizeRequest, _, err = oauth2.RequestAuthorization(clientConfig, serverConfig, hc); err != nil {
 		return err
 	}
 
-	LogRequest(authorizeRequest)
-
+	LogRequestln(authorizeRequest)
 	LogAuthURL(authorizeRequest.URL.String(), clientConfig.NoBrowser)
-
 	Logln()
 
-	// callback
-	callbackStatus := LogAction("Waiting for callback. Go to the browser to authenticate...")
+	LogWaiting("callback")
 
 	if callbackRequest, err = oauth2.WaitForCallback(clientConfig, serverConfig, hc); err != nil {
 		LogRequestln(callbackRequest)
@@ -41,14 +33,11 @@ func (c *OAuth2Cmd) ImplicitGrantFlow(clientConfig oauth2.ClientConfig, serverCo
 		tokenResponse.IDToken = callbackRequest.Get("id_token")
 	}
 
-	LogRequest(callbackRequest)
+	LogRequestln(callbackRequest)
 	LogTokenPayloadln(tokenResponse)
 	if err = CheckNonce(authorizeRequest.Nonce, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
 		return err
 	}
-	Logln()
-
-	callbackStatus("Obtained authorization")
 
 	c.PrintResult(tokenResponse)
 

@@ -6,8 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/cloudentity/oauth2c/cmd"
-	"github.com/pterm/pterm"
+	"github.com/sukujgrg/oauth2c/cmd"
 )
 
 var (
@@ -22,7 +21,7 @@ func init() {
 
 	go func() {
 		<-c
-		pterm.Error.Println("Interrupted")
+		fmt.Fprintln(os.Stderr, "Interrupted")
 		os.Exit(1)
 	}()
 }

@@ -1,19 +1,18 @@
 package oauth2
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSignJWT(t *testing.T) {
 	key, err := ReadKey(SigningKey, "../../data/rsa/key.json", http.DefaultClient)
-	require.NoError(t, err)
+	noErr(t, err)
 
 	claims := AssertionClaims(
 		ServerConfig{
@@ -26,23 +25,23 @@ func TestSignJWT(t *testing.T) {
 	)
 
 	token, _, err := SignJWT(claims, JWKSigner("../../data/rsa/key.json", http.DefaultClient))
-	require.NoError(t, err)
+	noErr(t, err)
 
 	jws, err := jose.ParseSigned(token, JOSESignatureAlgorithms)
-	require.NoError(t, err)
+	noErr(t, err)
 
 	bs, err := jws.Verify(key.Public())
-	require.NoError(t, err)
+	noErr(t, err)
 
 	m := map[string]interface{}{}
 
 	err = json.Unmarshal(bs, &m)
-	require.NoError(t, err)
+	noErr(t, err)
 
-	require.Equal(t, "jdoe@example.com", m["sub"].(string))
-	require.NotEmpty(t, m["aud"].(string))
-	require.NotEmpty(t, m["iss"].(string))
-	require.NotEmpty(t, m["jti"].(string))
+	eq(t, "jdoe@example.com", m["sub"].(string))
+	notEmpty(t, m["aud"].(string))
+	notEmpty(t, m["iss"].(string))
+	notEmpty(t, m["jti"].(string))
 }
 
 func TestCheckIDTokenNonce(t *testing.T) {
@@ -77,7 +76,7 @@ func TestCheckIDTokenNonce(t *testing.T) {
 		token, _, err := SignJWT(func() (map[string]interface{}, error) {
 			return claims, nil
 		}, JWKSigner("../../data/rsa/key.json", http.DefaultClient))
-		require.NoError(t, err)
+		noErr(t, err)
 
 		return token
 	}
@@ -99,7 +98,7 @@ func TestCheckIDTokenNonce(t *testing.T) {
 			}, nil)
 			return signer, key.Key, err
 		})
-		require.NoError(t, err)
+		noErr(t, err)
 
 		return token
 	}
@@ -110,7 +109,7 @@ func TestCheckIDTokenNonce(t *testing.T) {
 		token, _, err := SignJWT(func() (map[string]interface{}, error) {
 			return claims, nil
 		}, SecretSigner(secret))
-		require.NoError(t, err)
+		noErr(t, err)
 
 		return token
 	}
@@ -127,36 +126,36 @@ func TestCheckIDTokenNonce(t *testing.T) {
 
 	t.Run("skip when expected empty", func(t *testing.T) {
 		got, err := CheckIDTokenNonce("ignored", "", sconfig, cconfig, hc)
-		require.NoError(t, err)
-		require.Empty(t, got)
+		noErr(t, err)
+		empty(t, got)
 	})
 
 	t.Run("skip when id token empty", func(t *testing.T) {
 		got, err := CheckIDTokenNonce("", expected, sconfig, cconfig, hc)
-		require.NoError(t, err)
-		require.Empty(t, got)
+		noErr(t, err)
+		empty(t, got)
 	})
 
 	t.Run("matching nonce", func(t *testing.T) {
 		got, err := CheckIDTokenNonce(signRSA(t, validClaims(nil)), expected, sconfig, cconfig, hc)
-		require.NoError(t, err)
-		require.Equal(t, expected, got)
+		noErr(t, err)
+		eq(t, expected, got)
 	})
 
 	t.Run("matching nonce without kid", func(t *testing.T) {
 		got, err := CheckIDTokenNonce(signRSAWithoutKID(t, validClaims(nil)), expected, sconfig, cconfig, hc)
-		require.NoError(t, err)
-		require.Equal(t, expected, got)
+		noErr(t, err)
+		eq(t, expected, got)
 	})
 
 	t.Run("no kid with multiple signing keys", func(t *testing.T) {
 		key, err := ReadKey(SigningKey, "../../data/rsa/public.json", http.DefaultClient)
-		require.NoError(t, err)
+		noErr(t, err)
 
 		other := key
 		other.KeyID = "other"
 		body, err := json.Marshal(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{key, other}})
-		require.NoError(t, err)
+		noErr(t, err)
 
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -168,62 +167,62 @@ func TestCheckIDTokenNonce(t *testing.T) {
 			JWKsURI: srv.URL,
 			Issuer:  issuer,
 		}, cconfig, hc)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "multiple signing keys")
+		isErr(t, err)
+		contains(t, err.Error(), "multiple signing keys")
 	})
 
 	t.Run("mismatched nonce", func(t *testing.T) {
 		got, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"nonce": "other"})), expected, sconfig, cconfig, hc)
-		require.ErrorIs(t, err, ErrIDTokenNonceMismatch)
-		require.Equal(t, "other", got)
+		errorIs(t, err, ErrIDTokenNonceMismatch)
+		eq(t, "other", got)
 	})
 
 	t.Run("missing nonce", func(t *testing.T) {
 		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"nonce": nil})), expected, sconfig, cconfig, hc)
-		require.ErrorIs(t, err, ErrIDTokenNonceMissing)
+		errorIs(t, err, ErrIDTokenNonceMissing)
 	})
 
 	t.Run("wrong issuer", func(t *testing.T) {
 		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"iss": "https://other.example"})), expected, sconfig, cconfig, hc)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "id token claims are invalid")
+		isErr(t, err)
+		contains(t, err.Error(), "id token claims are invalid")
 	})
 
 	t.Run("wrong audience", func(t *testing.T) {
 		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"aud": "other-client"})), expected, sconfig, cconfig, hc)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "id token claims are invalid")
+		isErr(t, err)
+		contains(t, err.Error(), "id token claims are invalid")
 	})
 
 	t.Run("expired", func(t *testing.T) {
 		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"exp": now.Add(-time.Hour).Unix()})), expected, sconfig, cconfig, hc)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "id token claims are invalid")
+		isErr(t, err)
+		contains(t, err.Error(), "id token claims are invalid")
 	})
 
 	t.Run("missing exp", func(t *testing.T) {
 		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"exp": nil})), expected, sconfig, cconfig, hc)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "exp claim is missing")
+		isErr(t, err)
+		contains(t, err.Error(), "exp claim is missing")
 	})
 
 	t.Run("missing iat", func(t *testing.T) {
 		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"iat": nil})), expected, sconfig, cconfig, hc)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "iat claim is missing")
+		isErr(t, err)
+		contains(t, err.Error(), "iat claim is missing")
 	})
 
 	t.Run("forged token is rejected", func(t *testing.T) {
 		forged := signHMAC(t, validClaims(nil), []byte("test-secret-that-is-long-enough-for-hs256"))
 
 		_, unsafeClaims, err := UnsafeParseJWT(forged)
-		require.NoError(t, err)
-		require.Equal(t, expected, unsafeClaims["nonce"])
+		noErr(t, err)
+		eq(t, expected, unsafeClaims["nonce"])
 
 		_, err = CheckIDTokenNonce(forged, expected, sconfig, cconfig, hc)
-		require.Error(t, err)
-		require.NotErrorIs(t, err, ErrIDTokenNonceMismatch)
-		require.NotErrorIs(t, err, ErrIDTokenNonceMissing)
+		isErr(t, err)
+		notErrorIs(t, err, ErrIDTokenNonceMismatch)
+		notErrorIs(t, err, ErrIDTokenNonceMissing)
 	})
 
 	t.Run("hmac signature", func(t *testing.T) {
@@ -235,7 +234,7 @@ func TestCheckIDTokenNonce(t *testing.T) {
 			ClientID:     clientID,
 			ClientSecret: string(secret),
 		}, hc)
-		require.NoError(t, err)
-		require.Equal(t, expected, got)
+		noErr(t, err)
+		eq(t, expected, got)
 	})
 }

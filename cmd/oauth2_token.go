@@ -4,31 +4,30 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/cloudentity/oauth2c/internal/oauth2"
+	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
 func (c *OAuth2Cmd) ClientCredentialsGrantFlow(clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
-	return c.tokenEndpointFlow("Client Credentials Flow", clientConfig, serverConfig, hc)
+	return c.tokenEndpointFlow(clientConfig, serverConfig, hc)
 }
 
 func (c *OAuth2Cmd) PasswordGrantFlow(clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
-	return c.tokenEndpointFlow("Resource Owner Password Credentials Flow", clientConfig, serverConfig, hc)
+	return c.tokenEndpointFlow(clientConfig, serverConfig, hc)
 }
 
 func (c *OAuth2Cmd) RefreshTokenGrantFlow(clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
-	return c.tokenEndpointFlow("Refresh Token Flow", clientConfig, serverConfig, hc)
+	return c.tokenEndpointFlow(clientConfig, serverConfig, hc)
 }
 
 func (c *OAuth2Cmd) JWTBearerGrantFlow(clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
-	return c.tokenEndpointFlow("JWT Bearer Grant Flow", clientConfig, serverConfig, hc)
+	return c.tokenEndpointFlow(clientConfig, serverConfig, hc)
 }
 
 func (c *OAuth2Cmd) TokenExchangeGrantFlow(clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
-	return c.tokenEndpointFlow("Token Exchange Grant Flow", clientConfig, serverConfig, hc)
+	return c.tokenEndpointFlow(clientConfig, serverConfig, hc)
 }
 
 func (c *OAuth2Cmd) tokenEndpointFlow(
-	name string,
 	clientConfig oauth2.ClientConfig,
 	serverConfig oauth2.ServerConfig,
 	hc *http.Client,
@@ -41,13 +40,6 @@ func (c *OAuth2Cmd) tokenEndpointFlow(
 		err           error
 	)
 
-	LogHeader(name)
-
-	// request token
-	LogSection("Request authorization")
-
-	authorizationStatus := LogAction("Requesting authorization")
-
 	if tokenRequest, tokenResponse, err = oauth2.RequestToken(
 		context.Background(),
 		clientConfig,
@@ -59,14 +51,12 @@ func (c *OAuth2Cmd) tokenEndpointFlow(
 		return err
 	}
 
-	LogAssertion(tokenRequest, "Assertion", "assertion")
-	LogAssertion(tokenRequest, "Client assertion", "client_assertion")
+	LogAssertion(tokenRequest, "assertion")
+	LogAssertion(tokenRequest, "client_assertion")
 	LogSubjectTokenAndActorToken(tokenRequest)
 	LogAuthMethod(clientConfig)
 	LogRequestAndResponse(tokenRequest, tokenResponse)
 	LogTokenPayloadln(tokenResponse)
-
-	authorizationStatus("Authorization completed")
 
 	c.PrintResult(tokenResponse)
 

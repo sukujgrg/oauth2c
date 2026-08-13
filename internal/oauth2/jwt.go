@@ -2,14 +2,16 @@ package oauth2
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/pkg/errors"
 )
 
 func UnsafeParseJWT(token string) (*jwt.JSONWebToken, map[string]interface{}, error) {
@@ -38,7 +40,7 @@ var (
 func VerifyIDToken(idToken string, sconfig ServerConfig, cconfig ClientConfig, hc *http.Client) (map[string]interface{}, error) {
 	token, err := jwt.ParseSigned(idToken, JOSESignatureAlgorithms)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse id token")
+		return nil, fmt.Errorf("failed to parse id token: %w", err)
 	}
 
 	var (
@@ -50,7 +52,7 @@ func VerifyIDToken(idToken string, sconfig ServerConfig, cconfig ClientConfig, h
 
 	if sconfig.JWKsURI != "" {
 		if keys, err = ReadKeySet(sconfig.JWKsURI, hc); err != nil {
-			return nil, errors.Wrap(err, "failed to verify id token signature")
+			return nil, fmt.Errorf("failed to verify id token signature: %w", err)
 		}
 	}
 
@@ -110,7 +112,7 @@ func verifyIDTokenSignature(token *jwt.JSONWebToken, keys jose.JSONWebKeySet, hm
 	}
 
 	if verifyErr != nil {
-		return errors.Wrap(verifyErr, "failed to verify id token signature")
+		return fmt.Errorf("failed to verify id token signature: %w", verifyErr)
 	}
 
 	return errors.New("failed to verify id token signature: no jwks_uri or client secret")
@@ -158,7 +160,7 @@ func validateIDTokenClaims(registered jwt.Claims, sconfig ServerConfig, cconfig 
 	}
 
 	if err := registered.Validate(expected); err != nil {
-		return errors.Wrap(err, "id token claims are invalid")
+		return fmt.Errorf("id token claims are invalid: %w", err)
 	}
 
 	return nil
@@ -180,7 +182,7 @@ func CheckIDTokenNonce(idToken, expected string, sconfig ServerConfig, cconfig C
 	}
 
 	if got != expected {
-		return got, errors.Wrapf(ErrIDTokenNonceMismatch, "sent %q, got %q", expected, got)
+		return got, fmt.Errorf("sent %q, got %q: %w", expected, got, ErrIDTokenNonceMismatch)
 	}
 
 	return got, nil
@@ -197,7 +199,7 @@ func JWKSigner(keyPath string, hc *http.Client) SignerProvider {
 		}
 
 		if key, err = ReadKey(SigningKey, keyPath, hc); err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to read signing key from %s", keyPath)
+			return nil, nil, fmt.Errorf("failed to read signing key from %s: %w", keyPath, err)
 		}
 
 		if key.IsPublic() {
@@ -210,7 +212,7 @@ func JWKSigner(keyPath string, hc *http.Client) SignerProvider {
 		}, &jose.SignerOptions{
 			ExtraHeaders: map[jose.HeaderKey]interface{}{"kid": key.KeyID},
 		}); err != nil {
-			return nil, nil, errors.Wrapf(err, "failed to create a signer")
+			return nil, nil, fmt.Errorf("failed to create a signer: %w", err)
 		}
 
 		return signer, key.Key, nil
@@ -271,7 +273,7 @@ func RequestObjectClaims(params url.Values, serverConfig ServerConfig, clientCon
 			val := values[0]
 
 			if len(val) > 0 && (val[0] == '{' || val[0] == '[') {
-				claims[key] = json.RawMessage(val)
+				claims[key] = jsontext.Value(val)
 			} else {
 				claims[key] = val
 			}
@@ -303,19 +305,19 @@ func SignJWT(claimsProvider ClaimsProvider, signerProvider SignerProvider) (jwt 
 	)
 
 	if signer, key, err = signerProvider(); err != nil {
-		return "", nil, errors.Wrapf(err, "failed to create signer")
+		return "", nil, fmt.Errorf("failed to create signer: %w", err)
 	}
 
 	if claims, err = claimsProvider(); err != nil {
-		return "", nil, errors.Wrapf(err, "failed to build claims")
+		return "", nil, fmt.Errorf("failed to build claims: %w", err)
 	}
 
 	if bs, err = json.Marshal(claims); err != nil {
-		return "", nil, errors.Wrapf(err, "failed to serialize claims")
+		return "", nil, fmt.Errorf("failed to serialize claims: %w", err)
 	}
 
 	if jws, err = signer.Sign(bs); err != nil {
-		return "", nil, errors.Wrapf(err, "failed to sign jwt")
+		return "", nil, fmt.Errorf("failed to sign jwt: %w", err)
 	}
 
 	if jwt, err = jws.CompactSerialize(); err != nil {
@@ -333,11 +335,11 @@ func PlaintextJWT(claimsProvider ClaimsProvider) (string, string, error) {
 	)
 
 	if claims, err = claimsProvider(); err != nil {
-		return "", "", errors.Wrapf(err, "failed to build claims")
+		return "", "", fmt.Errorf("failed to build claims: %w", err)
 	}
 
 	if claimsJSON, err = json.Marshal(claims); err != nil {
-		return "", "", errors.Wrapf(err, "failed to serialize claims")
+		return "", "", fmt.Errorf("failed to serialize claims: %w", err)
 	}
 
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))

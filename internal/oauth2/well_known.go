@@ -2,7 +2,7 @@ package oauth2
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 )
 
@@ -60,7 +60,7 @@ func FetchOpenIDConfiguration(ctx context.Context, issuerURL string, hc *http.Cl
 		return request, c, ParseError(resp)
 	}
 
-	if err = json.NewDecoder(resp.Body).Decode(&c); err != nil {
+	if err = json.UnmarshalRead(resp.Body, &c); err != nil {
 		return request, c, err
 	}
 

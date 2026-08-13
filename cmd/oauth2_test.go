@@ -2,12 +2,9 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"strings"
 	"testing"
-
-	"github.com/itchyny/gojq"
-	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -28,8 +25,8 @@ type CommandTestCase struct {
 }
 
 type CommandDependency struct {
-	args []string
-	jq   string
+	args  []string
+	field string
 }
 
 func (tc *CommandTestCase) Test() func(*testing.T) {
@@ -47,10 +44,10 @@ func (tc *CommandTestCase) Test() func(*testing.T) {
 		err := cmd.Execute()
 
 		if tc.err == nil {
-			require.NoError(t, err)
+			noErr(t, err)
 		} else {
-			require.Error(t, err)
-			require.Equal(t, err.Error(), tc.err.Error())
+			isErr(t, err)
+			eq(t, err.Error(), tc.err.Error())
 		}
 	}
 }
@@ -67,19 +64,16 @@ func (tc *CommandTestCase) GetDeps(t *testing.T) map[string]string {
 		cmd.SetOut(&output)
 		err := cmd.Execute()
 
-		require.NoError(t, err)
+		noErr(t, err)
 
 		err = json.Unmarshal(output.Bytes(), &result)
-		require.NoError(t, err)
+		noErr(t, err)
 
-		query, err := gojq.Parse(dep.jq)
-		require.NoError(t, err)
-		iter := query.Run(result)
+		v, ok := result[dep.field].(string)
+		isTrue(t, ok)
+		notEmpty(t, v)
 
-		v, ok := iter.Next()
-		require.True(t, ok)
-
-		deps[name] = v.(string)
+		deps[name] = v
 	}
 
 	return deps

@@ -1,21 +1,17 @@
-# OAuth2c: user-friendly OAuth CLI
+# OAuth2c
 
-[![status](https://github.com/cloudentity/oauth2c/workflows/build/badge.svg)](https://github.com/cloudentity/oauthc/actions)
+[![status](https://github.com/sukujgrg/oauth2c/workflows/build/badge.svg)](https://github.com/sukujgrg/oauth2c/actions)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
-[![release](https://img.shields.io/github/release-pre/cloudentity/oauth2c.svg)](https://github.com/cloudentity/oauth2c/releases)
-[![downloads](https://img.shields.io/github/downloads/cloudentity/oauth2c/total)](https://github.com/cloudentity/oauth2c/releases)
-[![packages](https://repology.org/badge/tiny-repos/oauth2c.svg)](https://repology.org/project/oauth2c/versions)
+[![release](https://img.shields.io/github/release-pre/sukujgrg/oauth2c.svg)](https://github.com/sukujgrg/oauth2c/releases)
 
 `oauth2c` is a command-line tool for interacting with OAuth 2.0 authorization
-servers. Its goal is to make it easy to fetch access tokens using any grant type
-or client authentication method. It is compliant with almost all basic and
-advanced OAuth 2.0, OIDC, OIDF FAPI and JWT profiles.
+servers. It fetches access tokens using any grant type or client authentication
+method, and is compliant with almost all basic and advanced OAuth 2.0, OIDC,
+OIDF FAPI and JWT profiles.
 
 This is a fork of [cloudentity/oauth2c](https://github.com/cloudentity/oauth2c),
 maintained independently for other use cases. oauth2c was created by Cloudentity;
 this fork exists thanks to their work.
-
-![demo](https://user-images.githubusercontent.com/909896/176916616-36d803ef-832a-4bd8-ba8d-f6689e31ed22.gif)
 
 ## Features
 
@@ -34,58 +30,28 @@ this fork exists thanks to their work.
 
 ## Installation
 
-<a href="https://repology.org/project/oauth2c/versions">
-    <img src="https://repology.org/badge/vertical-allrepos/oauth2c.svg" alt="Packaging status" align="right">
-</a>
-
-To install `oauth2c`, you have several options depending on your operating
-system.
-
-### Install on Mac
-
-On Mac, you can install `oauth2c` using `brew` by running the following command:
+Clone and install:
 
 ```sh
-brew install cloudentity/tap/oauth2c
+git clone https://github.com/sukujgrg/oauth2c.git
+cd oauth2c
+make install
 ```
 
-### Install on Linux
-
-On linux, you can install `oauth2c` using the installation script by running the
-following command:
-
-```sh
-curl -sSfL https://raw.githubusercontent.com/cloudentity/oauth2c/master/install.sh | \
-  sudo sh -s -- -b /usr/local/bin latest
-```
-
-Alternatively, you can check the [packages page] for specific instructions on
-installing oauth2c using a package manager.
-
-[packages page]: https://repology.org/project/oauth2c/versions
-
-### Compile from source
-
-To compile `oauth2c` from source using `go`. To do this run the following
-command:
-
-```sh
-go install github.com/cloudentity/oauth2c@latest
-```
+`make` sets `GOEXPERIMENT=jsonv2` so the experimental `encoding/json/v2` package
+is available.
 
 You can also download a pre-built binary from the [releases page].
 
-[releases page]: https://github.com/cloudentity/oauth2c/releases
+[releases page]: https://github.com/sukujgrg/oauth2c/releases
 
 ## Usage
-
-To use `oauth2c`, run the following command and follow the prompts:
 
 ```sh
 oauth2c [issuer url] [flags]
 ```
 
-The available flags are:
+`--grant-type` is required. The available flags are:
 
 ```sh
       --acr-values strings                                  ACR values
@@ -118,7 +84,6 @@ The available flags are:
       --mtls-pushed-authorization-request-endpoint string   server's mtls pushed authorization request endpoint
       --mtls-token-endpoint string                          server's mtls token endpoint
       --no-browser                                          do not open browser
-      --no-prompt                                           disable prompt
       --nonce string                                        openid connect nonce
       --par                                                 enable pushed authorization requests (PAR)
       --password string                                     resource owner password credentials grant flow password
@@ -344,7 +309,7 @@ oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
   --grant-type urn:ietf:params:oauth:grant-type:jwt-bearer \
   --auth-method client_secret_basic \
   --scopes email \
-  --signing-key https://raw.githubusercontent.com/cloudentity/oauth2c/master/data/rsa/key.json \
+  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json \
   --assertion '{"sub":"jdoe@example.com"}'
 ```
 
@@ -469,7 +434,7 @@ secret, as the private key is never shared with the OAuth2 server.
 ```sh
 oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
   --client-id 582af0afb0d74554aa7af47849edb222 \
-  --signing-key https://raw.githubusercontent.com/cloudentity/oauth2c/master/data/rsa/key.json \
+  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json \
   --grant-type client_credentials \
   --auth-method private_key_jwt \
   --scopes introspect_tokens,revoke_tokens
@@ -489,8 +454,8 @@ OAuth2 providers.
 ```sh
 oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
   --client-id 3f07a8c2adea4c1ab353f3ca8e16b8fd \
-  --tls-cert https://raw.githubusercontent.com/cloudentity/oauth2c/master/data/cert.pem \
-  --tls-key https://raw.githubusercontent.com/cloudentity/oauth2c/master/data/key.pem \
+  --tls-cert https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/cert.pem \
+  --tls-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/key.pem \
   --grant-type client_credentials \
   --auth-method tls_client_auth \
   --scopes introspect_tokens,revoke_tokens
@@ -652,7 +617,7 @@ oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
   --grant-type authorization_code \
   --auth-method client_secret_post \
   --scopes openid,email,offline_access \
-  --encryption-key https://raw.githubusercontent.com/cloudentity/oauth2c/master/data/rsa/key.json
+  --encryption-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json
 ```
 
 #### PAR
@@ -696,7 +661,7 @@ oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
   --grant-type authorization_code \
   --auth-method client_secret_basic \
   --scopes openid,email,offline_access \
-  --signing-key https://raw.githubusercontent.com/cloudentity/oauth2c/master/data/ps/key.json \
+  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/ps/key.json \
   --dpop
 ```
 
@@ -755,8 +720,8 @@ oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
   --grant-type authorization_code \
   --auth-method client_secret_basic \
   --redirect-url https://localhost:9876/callback \
-  --callback-tls-cert https://raw.githubusercontent.com/cloudentity/oauth2c/master/data/cert.pem \
-  --callback-tls-key https://raw.githubusercontent.com/cloudentity/oauth2c/master/data/key.pem
+  --callback-tls-cert https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/cert.pem \
+  --callback-tls-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/key.pem
 ```
 
 #### Using a TLS-Terminating Proxy

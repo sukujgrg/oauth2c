@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/cloudentity/oauth2c/internal/oauth2"
+	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
 func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
@@ -19,46 +19,31 @@ func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig,
 		err              error
 	)
 
-	LogHeader("Authorization Code Flow")
-
 	if clientConfig.PAR {
-		LogSection("Request PAR")
-
 		if parRequest, parResponse, authorizeRequest, codeVerifier, err = oauth2.RequestPAR(context.Background(), clientConfig, serverConfig, hc); err != nil {
 			LogRequestAndResponseln(parRequest, err)
 			return err
 		}
 
-		LogAssertion(parRequest, "Client assertion", "client_assertion")
+		LogAssertion(parRequest, "client_assertion")
 		LogAuthMethod(clientConfig)
 		LogRequestObject(parRequest)
 		LogRequestAndResponse(parRequest, parResponse)
-
-		LogSection("Request authorization")
-
-		LogRequest(authorizeRequest)
+		LogRequestln(authorizeRequest)
 	} else {
-		LogSection("Request authorization")
-
 		if authorizeRequest, codeVerifier, err = oauth2.RequestAuthorization(clientConfig, serverConfig, hc); err != nil {
 			return err
 		}
 
 		LogRequestObject(authorizeRequest)
-		LogRequest(authorizeRequest)
+		LogRequestln(authorizeRequest)
 	}
 
-	if codeVerifier != "" {
-		Logln()
-		LogBox("PKCE", "code_verifier = %s\ncode_challenge = BASE64URL-ENCODE(SHA256(ASCII(code_verifier)))", codeVerifier)
-	}
-
+	LogPKCE(codeVerifier)
 	LogAuthURL(authorizeRequest.URL.String(), clientConfig.NoBrowser)
-
 	Logln()
 
-	// callback
-	callbackStatus := LogAction("Waiting for callback. Go to the browser to authenticate...")
+	LogWaiting("callback")
 
 	if callbackRequest, err = oauth2.WaitForCallback(clientConfig, serverConfig, hc); err != nil {
 		LogRequestln(callbackRequest)
@@ -70,21 +55,13 @@ func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig,
 		sentNonce = parRequest.Nonce
 	}
 
-	LogRequest(callbackRequest)
+	LogRequestln(callbackRequest)
 	LogJARM(callbackRequest)
 	if idToken := callbackRequest.Get("id_token"); idToken != "" {
 		if err = CheckNonce(sentNonce, idToken, clientConfig, serverConfig, hc); err != nil {
 			return err
 		}
 	}
-	Logln()
-
-	callbackStatus("Obtained authorization code")
-
-	LogSection("Exchange authorization code for token")
-
-	// token exchange
-	exchangeStatus := LogAction("Exchaging authorization code for access token")
 
 	if tokenRequest, tokenResponse, err = oauth2.RequestToken(
 		context.Background(),
@@ -105,8 +82,6 @@ func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig,
 	if err = CheckNonce(sentNonce, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
 		return err
 	}
-
-	exchangeStatus("Exchanged authorization code for access token")
 
 	c.PrintResult(tokenResponse)
 

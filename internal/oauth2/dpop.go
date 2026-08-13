@@ -3,13 +3,13 @@ package oauth2
 import (
 	"crypto"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -35,19 +35,19 @@ func DPoPSignRequest(signingKey string, hc *http.Client, r *http.Request) error 
 	)
 
 	if key, err = ReadKey(SigningKey, signingKey, hc); err != nil {
-		return errors.Wrapf(err, "failed to read signing key from %s", signingKey)
+		return fmt.Errorf("failed to read signing key from %s: %w", signingKey, err)
 	}
 
 	if key.Algorithm == "" {
-		return errors.New("signing key algorithm must be set")
+		return fmt.Errorf("signing key algorithm must be set")
 	}
 
 	if key.IsPublic() {
-		return errors.New("signing key must be private")
+		return fmt.Errorf("signing key must be private")
 	}
 
 	if !key.Valid() {
-		return errors.New("signing key is not valid")
+		return fmt.Errorf("signing key is not valid")
 	}
 
 	sig := jose.SigningKey{
@@ -63,7 +63,7 @@ func DPoPSignRequest(signingKey string, hc *http.Client, r *http.Request) error 
 	}
 
 	if signer, err = jose.NewSigner(sig, opts); err != nil {
-		return errors.Wrapf(err, "failed to create signer")
+		return fmt.Errorf("failed to create signer: %w", err)
 	}
 
 	claims := DPoPClaims{
@@ -98,7 +98,7 @@ func DPoPThumbprint(signingKey string, hc *http.Client) (string, error) {
 	)
 
 	if key, err = ReadKey(SigningKey, signingKey, hc); err != nil {
-		return "", errors.Wrapf(err, "failed to read signing key from %s", signingKey)
+		return "", fmt.Errorf("failed to read signing key from %s: %w", signingKey, err)
 	}
 
 	public := key.Public()

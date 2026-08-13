@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cloudentity/oauth2c/internal/oauth2"
+	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
 func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
@@ -17,11 +17,6 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 		tokenResponse         oauth2.TokenResponse
 		err                   error
 	)
-
-	LogHeader("Device Flow")
-
-	// device authorization endpoint
-	LogSection("Request device authorization")
 
 	if authorizationRequest, authorizationResponse, err = oauth2.RequestDeviceAuthorization(context.Background(), clientConfig, serverConfig, hc); err != nil {
 		LogRequestAndResponseln(tokenRequest, err)
@@ -36,11 +31,9 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 	}
 
 	LogAuthURL(verificationUri, clientConfig.NoBrowser)
-
 	Logln()
 
-	// polling
-	tokenStatus := LogAction("Waiting for token. Go to the browser to authenticate...")
+	LogWaiting("token")
 
 	interval := 5 * time.Second
 	if authorizationResponse.Interval != nil {
@@ -85,8 +78,6 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 
 	err = <-done
 
-	LogSection("Exchange device code for token")
-
 	if err != nil {
 		LogRequestAndResponseln(tokenRequest, err)
 		return err
@@ -98,8 +89,6 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 	if err = CheckNonce(authorizationRequest.Nonce, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
 		return err
 	}
-
-	tokenStatus("Obtained token")
 
 	c.PrintResult(tokenResponse)
 

@@ -3,13 +3,12 @@ package oauth2
 import (
 	"net/http"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestReadKey(t *testing.T) {
 	key, err := ReadKey(SigningKey, "../../data/rsa/key.json", http.DefaultClient)
-	require.NoError(t, err)
-
-	require.NotNil(t, key)
+	noErr(t, err)
+	if key.Key == nil {
+		t.Fatal("expected signing key")
+	}
 }
