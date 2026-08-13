@@ -3,12 +3,9 @@ package cmd
 import (
 	"bytes"
 	"net/url"
-	"os"
 	"testing"
 
 	"github.com/cloudentity/oauth2c/internal/oauth2"
-	"github.com/pterm/pterm"
-	"github.com/stretchr/testify/require"
 )
 
 func TestLogAccessTokenPayload(t *testing.T) {
@@ -17,9 +14,9 @@ func TestLogAccessTokenPayload(t *testing.T) {
 
 		LogTokenPayload(oauth2.TokenResponse{AccessToken: "opaque-access-token"})
 
-		require.Contains(t, output.String(), "Access token: (opaque or non-JWT)")
-		require.NotContains(t, output.String(), "ERROR")
-		require.NotContains(t, output.String(), "compact JWS")
+		contains(t, output.String(), "Access token: (opaque or non-JWT)")
+		notContains(t, output.String(), "ERROR")
+		notContains(t, output.String(), "compact JWS")
 	})
 
 	t.Run("signed JWT", func(t *testing.T) {
@@ -30,14 +27,14 @@ func TestLogAccessTokenPayload(t *testing.T) {
 			},
 			oauth2.SecretSigner([]byte("test-secret-that-is-long-enough-for-hs256")),
 		)
-		require.NoError(t, err)
+		noErr(t, err)
 
 		LogAccessTokenPayload("Access token", token)
 
-		require.Contains(t, output.String(), "Access token:")
-		require.Contains(t, output.String(), `"sub"`)
-		require.Contains(t, output.String(), `"user"`)
-		require.NotContains(t, output.String(), "opaque or non-JWT")
+		contains(t, output.String(), "Access token:")
+		contains(t, output.String(), `"sub"`)
+		contains(t, output.String(), `"user"`)
+		notContains(t, output.String(), "opaque or non-JWT")
 	})
 }
 
@@ -49,21 +46,20 @@ func TestLogSubjectTokenAndActorTokenWithOpaqueTokens(t *testing.T) {
 		"actor_token":   {"opaque-actor-token"},
 	}})
 
-	require.Contains(t, output.String(), "Subject token: (opaque or non-JWT)")
-	require.Contains(t, output.String(), "Actor token: (opaque or non-JWT)")
-	require.NotContains(t, output.String(), "ERROR")
-	require.NotContains(t, output.String(), "compact JWS")
+	contains(t, output.String(), "Subject token: (opaque or non-JWT)")
+	contains(t, output.String(), "Actor token: (opaque or non-JWT)")
+	notContains(t, output.String(), "ERROR")
+	notContains(t, output.String(), "compact JWS")
 }
 
 func captureLogOutput(t *testing.T) *bytes.Buffer {
 	t.Helper()
 
 	output := &bytes.Buffer{}
-	pterm.SetDefaultOutput(output)
-	pterm.DisableStyling()
+	prev := logOut
+	logOut = output
 	t.Cleanup(func() {
-		pterm.SetDefaultOutput(os.Stderr)
-		pterm.EnableStyling()
+		logOut = prev
 	})
 
 	return output

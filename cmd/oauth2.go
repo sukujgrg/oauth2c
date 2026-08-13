@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -14,14 +14,10 @@ import (
 
 	"github.com/cli/browser"
 	"github.com/cloudentity/oauth2c/internal/oauth2"
-	"dario.cat/mergo"
 	"github.com/spf13/cobra"
 )
 
-var (
-	silent   bool
-	noPrompt bool
-)
+var silent bool
 
 type OAuth2Cmd struct {
 	*cobra.Command
@@ -36,7 +32,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd = &OAuth2Cmd{
 		Command: &cobra.Command{
 			Use:   "oauth2c [issuer url]",
-			Short: "User-friendly command-line for OAuth2",
+			Short: "Command-line OAuth2 client",
 			Args:  cobra.ExactArgs(1),
 		},
 	}
@@ -44,7 +40,6 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd.Command.Run = cmd.Run(&cconfig, &sconfig)
 
 	cmd.AddCommand(NewVersionCmd(version, commit, date))
-	cmd.AddCommand(docsCmd)
 
 	cmd.PersistentFlags().StringVar(&cconfig.RedirectURL, "redirect-url", "http://localhost:9876/callback", "client redirect url")
 	cmd.PersistentFlags().StringVar(&cconfig.ClientID, "client-id", "", "client identifier")
@@ -85,7 +80,6 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd.PersistentFlags().BoolVar(&cconfig.Insecure, "insecure", false, "allow insecure connections")
 	cmd.PersistentFlags().BoolVarP(&silent, "silent", "s", false, "silent mode")
 	cmd.PersistentFlags().BoolVar(&cconfig.NoBrowser, "no-browser", false, "do not open browser")
-	cmd.PersistentFlags().BoolVar(&noPrompt, "no-prompt", false, "disable prompt")
 	cmd.PersistentFlags().BoolVar(&cconfig.DPoP, "dpop", false, "use DPoP")
 	cmd.PersistentFlags().StringVar(&cconfig.Claims, "claims", "", "use claims")
 	cmd.PersistentFlags().StringVar(&cconfig.RAR, "rar", "", "use rich authorization request (RAR)")
@@ -121,15 +115,21 @@ func (c *OAuth2Cmd) Run(cconfig *oauth2.ClientConfig, sconfig *oauth2.ServerConf
 				os.Exit(1)
 			}
 
-			if err := mergo.Merge(&cconfig, config.ToClientConfig()); err != nil {
-				LogError(err)
-				os.Exit(1)
+			fromFile := config.ToClientConfig()
+			if cconfig.IssuerURL == "" {
+				cconfig.IssuerURL = fromFile.IssuerURL
+			}
+			if cconfig.ClientID == "" {
+				cconfig.ClientID = fromFile.ClientID
+			}
+			if cconfig.ClientSecret == "" {
+				cconfig.ClientSecret = fromFile.ClientSecret
 			}
 		} else {
 			cconfig.IssuerURL = strings.TrimSuffix(args[0], oauth2.OpenIDConfigurationPath)
 		}
 
-		if err := Validate.Struct(cconfig); err != nil {
+		if err := cconfig.Validate(); err != nil {
 			LogError(err)
 			os.Exit(1)
 		}
@@ -202,10 +202,6 @@ func (c *OAuth2Cmd) Authorize(
 			LogRequestln(serverRequest)
 			return err
 		}
-	}
-
-	if !silent && !noPrompt {
-		clientConfig = PromptForClientConfig(clientConfig, serverConfig)
 	}
 
 	LogInputData(clientConfig)

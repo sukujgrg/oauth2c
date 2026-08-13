@@ -1,21 +1,17 @@
-# OAuth2c: user-friendly OAuth CLI
+# OAuth2c
 
-[![status](https://github.com/cloudentity/oauth2c/workflows/build/badge.svg)](https://github.com/cloudentity/oauthc/actions)
+[![status](https://github.com/sukujgrg/oauth2c/workflows/build/badge.svg)](https://github.com/sukujgrg/oauth2c/actions)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
-[![release](https://img.shields.io/github/release-pre/cloudentity/oauth2c.svg)](https://github.com/cloudentity/oauth2c/releases)
-[![downloads](https://img.shields.io/github/downloads/cloudentity/oauth2c/total)](https://github.com/cloudentity/oauth2c/releases)
-[![packages](https://repology.org/badge/tiny-repos/oauth2c.svg)](https://repology.org/project/oauth2c/versions)
+[![release](https://img.shields.io/github/release-pre/sukujgrg/oauth2c.svg)](https://github.com/sukujgrg/oauth2c/releases)
 
 `oauth2c` is a command-line tool for interacting with OAuth 2.0 authorization
-servers. Its goal is to make it easy to fetch access tokens using any grant type
-or client authentication method. It is compliant with almost all basic and
-advanced OAuth 2.0, OIDC, OIDF FAPI and JWT profiles.
+servers. It fetches access tokens using any grant type or client authentication
+method, and is compliant with almost all basic and advanced OAuth 2.0, OIDC,
+OIDF FAPI and JWT profiles.
 
 This is a fork of [cloudentity/oauth2c](https://github.com/cloudentity/oauth2c),
 maintained independently for other use cases. oauth2c was created by Cloudentity;
 this fork exists thanks to their work.
-
-![demo](https://user-images.githubusercontent.com/909896/176916616-36d803ef-832a-4bd8-ba8d-f6689e31ed22.gif)
 
 ## Features
 
@@ -34,58 +30,28 @@ this fork exists thanks to their work.
 
 ## Installation
 
-<a href="https://repology.org/project/oauth2c/versions">
-    <img src="https://repology.org/badge/vertical-allrepos/oauth2c.svg" alt="Packaging status" align="right">
-</a>
-
-To install `oauth2c`, you have several options depending on your operating
-system.
-
-### Install on Mac
-
-On Mac, you can install `oauth2c` using `brew` by running the following command:
+Clone and install:
 
 ```sh
-brew install cloudentity/tap/oauth2c
+git clone https://github.com/sukujgrg/oauth2c.git
+cd oauth2c
+make install
 ```
 
-### Install on Linux
-
-On linux, you can install `oauth2c` using the installation script by running the
-following command:
-
-```sh
-curl -sSfL https://raw.githubusercontent.com/cloudentity/oauth2c/master/install.sh | \
-  sudo sh -s -- -b /usr/local/bin latest
-```
-
-Alternatively, you can check the [packages page] for specific instructions on
-installing oauth2c using a package manager.
-
-[packages page]: https://repology.org/project/oauth2c/versions
-
-### Compile from source
-
-To compile `oauth2c` from source using `go`. To do this run the following
-command:
-
-```sh
-go install github.com/cloudentity/oauth2c@latest
-```
+`make` sets `GOEXPERIMENT=jsonv2` so the experimental `encoding/json/v2` package
+is available.
 
 You can also download a pre-built binary from the [releases page].
 
-[releases page]: https://github.com/cloudentity/oauth2c/releases
+[releases page]: https://github.com/sukujgrg/oauth2c/releases
 
 ## Usage
-
-To use `oauth2c`, run the following command and follow the prompts:
 
 ```sh
 oauth2c [issuer url] [flags]
 ```
 
-The available flags are:
+`--grant-type` is required. The available flags are:
 
 ```sh
       --acr-values strings                                  ACR values
@@ -118,7 +84,6 @@ The available flags are:
       --mtls-pushed-authorization-request-endpoint string   server's mtls pushed authorization request endpoint
       --mtls-token-endpoint string                          server's mtls token endpoint
       --no-browser                                          do not open browser
-      --no-prompt                                           disable prompt
       --nonce string                                        openid connect nonce
       --par                                                 enable pushed authorization requests (PAR)
       --password string                                     resource owner password credentials grant flow password

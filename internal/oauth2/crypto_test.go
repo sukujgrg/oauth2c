@@ -1,15 +1,7 @@
-package oauth2_test
+package oauth2
 
-import (
-	"testing"
-
-	"github.com/cloudentity/oauth2c/internal/oauth2"
-	"github.com/stretchr/testify/require"
-)
+import "testing"
 
 func TestRandomString(t *testing.T) {
-	r1 := oauth2.RandomString(10)
-	r2 := oauth2.RandomString(10)
-
-	require.NotEqual(t, r1, r2)
+	notEq(t, RandomString(10), RandomString(10))
 }

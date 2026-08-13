@@ -1,22 +1,24 @@
 package oauth2
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
-	"github.com/pkg/errors"
 )
 
 // grant types
@@ -29,7 +31,6 @@ const (
 	JWTBearerGrantType         string = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 	TokenExchangeGrantType     string = "urn:ietf:params:oauth:grant-type:token-exchange"
 	DeviceGrantType            string = "urn:ietf:params:oauth:grant-type:device_code"
-	// CIBAGrantType              string = "urn:openid:params:grant-type:ciba"
 )
 
 // auth methods
@@ -53,50 +54,50 @@ const CodeVerifierLength = 43
 var CodeChallengeEncoder = base64.RawURLEncoding
 
 type ClientConfig struct {
-	IssuerURL              string `validate:"url"`
-	RedirectURL            string `validate:"url"`
+	IssuerURL              string
+	RedirectURL            string
 	NoOrigin               bool
-	GrantType              string `validate:"oneof=authorization_code client_credentials implicit password refresh_token urn:ietf:params:oauth:grant-type:jwt-bearer urn:ietf:params:oauth:grant-type:token-exchange urn:ietf:params:oauth:grant-type:device_code"`
+	GrantType              string
 	ClientID               string
 	ClientSecret           string
 	Scopes                 []string
 	ACRValues              []string
 	Audience               []string
 	Resource               []string
-	AuthMethod             string `validate:"omitempty,oneof=client_secret_basic client_secret_post client_secret_jwt private_key_jwt self_signed_tls_client_auth tls_client_auth none"`
+	AuthMethod             string
 	PKCE                   bool
 	Nonce                  string
 	PAR                    bool
 	RequestObject          bool
 	EncryptedRequestObject bool
 	Insecure               bool
-	ResponseType           []string `validate:"dive,omitempty,oneof=code id_token token none"`
-	ResponseMode           string   `validate:"omitempty,oneof=query form_post query.jwt form_post.jwt jwt"`
+	ResponseType           []string
+	ResponseMode           string
 	Username               string
 	Password               string
 	RefreshToken           string
-	Assertion              string `validate:"omitempty,json"`
-	SigningKey             string `validate:"omitempty,uri|file"`
-	EncryptionKey          string `validate:"omitempty,uri|file"`
+	Assertion              string
+	SigningKey             string
+	EncryptionKey          string
 	SubjectToken           string
-	SubjectTokenType       string `validate:"omitempty,oneof=urn:ietf:params:oauth:token-type:access_token"`
+	SubjectTokenType       string
 	ActorToken             string
-	ActorTokenType         string `validate:"omitempty,oneof=urn:ietf:params:oauth:token-type:access_token"`
+	ActorTokenType         string
 	IDTokenHint            string
 	LoginHint              string
 	IDPHint                string
-	TLSCert                string `validate:"omitempty,uri|file"`
-	TLSKey                 string `validate:"omitempty,uri|file"`
-	TLSRootCA              string `validate:"omitempty,uri|file"`
-	CallbackTLSCert        string `validate:"omitempty,uri|file"`
-	CallbackTLSKey         string `validate:"omitempty,uri|file"`
-	CallbackAddr           string `validate:"omitempty"`
+	TLSCert                string
+	TLSKey                 string
+	TLSRootCA              string
+	CallbackTLSCert        string
+	CallbackTLSKey         string
+	CallbackAddr           string
 	HTTPTimeout            time.Duration
 	BrowserTimeout         time.Duration
 	NoBrowser              bool
 	DPoP                   bool
-	Claims                 string `validate:"omitempty,json"`
-	RAR                    string `validate:"omitempty,json"`
+	Claims                 string
+	RAR                    string
 	Purpose                string
 	Prompt                 []string
 	MaxAge                 string
@@ -109,11 +110,11 @@ func RequestAuthorization(cconfig ClientConfig, sconfig ServerConfig, hc *http.C
 	}
 
 	if r.URL, err = url.Parse(sconfig.AuthorizationEndpoint); err != nil {
-		return r, "", errors.Wrapf(err, "failed to parse authorization endpoint")
+		return r, "", fmt.Errorf("failed to parse authorization endpoint: %w", err)
 	}
 
 	if codeVerifier, err = r.AuthorizeRequest(cconfig, sconfig, hc); err != nil {
-		return r, "", errors.Wrapf(err, "failed to create authorization request")
+		return r, "", fmt.Errorf("failed to create authorization request: %w", err)
 	}
 
 	r.URL.RawQuery = r.Form.Encode()
@@ -150,7 +151,7 @@ func RequestPAR(
 
 	// push authorization request to /par
 	if codeVerifier, err = parRequest.AuthorizeRequest(cconfig, sconfig, hc); err != nil {
-		return parRequest, parResponse, authorizeRequest, "", errors.Wrapf(err, "failed to create authorization request")
+		return parRequest, parResponse, authorizeRequest, "", fmt.Errorf("failed to create authorization request: %w", err)
 	}
 
 	if endpoint, err = parRequest.AuthenticateClient(
@@ -160,7 +161,7 @@ func RequestPAR(
 		sconfig,
 		hc,
 	); err != nil {
-		return parRequest, parResponse, authorizeRequest, "", errors.Wrapf(err, "failed to create client authentication request")
+		return parRequest, parResponse, authorizeRequest, "", fmt.Errorf("failed to create client authentication request: %w", err)
 	}
 
 	if req, err = http.NewRequestWithContext(
@@ -192,13 +193,13 @@ func RequestPAR(
 		return parRequest, parResponse, authorizeRequest, codeVerifier, ParseError(resp)
 	}
 
-	if err = json.NewDecoder(resp.Body).Decode(&parResponse); err != nil {
+	if err = json.UnmarshalRead(resp.Body, &parResponse); err != nil {
 		return parRequest, parResponse, authorizeRequest, codeVerifier, fmt.Errorf("failed to parse token response: %w", err)
 	}
 
 	// build request to /authorize
 	if authorizeRequest.URL, err = url.Parse(sconfig.AuthorizationEndpoint); err != nil {
-		return parRequest, parResponse, authorizeRequest, codeVerifier, errors.Wrapf(err, "failed to create authorization request")
+		return parRequest, parResponse, authorizeRequest, codeVerifier, fmt.Errorf("failed to create authorization request: %w", err)
 	}
 
 	values := url.Values{
@@ -212,16 +213,19 @@ func RequestPAR(
 	return parRequest, parResponse, authorizeRequest, codeVerifier, nil
 }
 
-func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *http.Client) (request Request, err error) {
+func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *http.Client) (Request, error) {
 	var (
-		srv         = http.Server{}
 		redirectURL *url.URL
 		cert        tls.Certificate
 		done        = make(chan struct{})
+		mu          sync.Mutex
+		result      Request
+		resultErr   error
+		err         error
 	)
 
 	if redirectURL, err = url.Parse(clientConfig.RedirectURL); err != nil {
-		return request, errors.Wrapf(err, "failed to parse redirect url: %s", clientConfig.RedirectURL)
+		return Request{}, fmt.Errorf("failed to parse redirect url: %s: %w", clientConfig.RedirectURL, err)
 	}
 
 	if redirectURL.Path == "" {
@@ -230,116 +234,145 @@ func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *h
 
 	useTLS := clientConfig.CallbackTLSCert != "" && clientConfig.CallbackTLSKey != ""
 
-	if clientConfig.CallbackAddr != "" {
-		srv.Addr = clientConfig.CallbackAddr
-	} else {
-		srv.Addr = redirectURL.Host
-
+	addr := clientConfig.CallbackAddr
+	if addr == "" {
+		addr = redirectURL.Host
 		if redirectURL.Port() == "" {
 			if useTLS {
-				srv.Addr += ":443"
+				addr += ":443"
 			} else {
-				srv.Addr += ":80"
+				addr += ":80"
 			}
 		}
 	}
 
+	mux := http.NewServeMux()
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
 	if useTLS {
 		if cert, err = ReadKeyPair(clientConfig.CallbackTLSCert, clientConfig.CallbackTLSKey, hc); err != nil {
-			return request, errors.Wrapf(err, "failed to read callback tls key pair")
+			return Request{}, fmt.Errorf("failed to read callback tls key pair: %w", err)
 		}
 
 		srv.TLSConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
 		}
 	}
 
-	http.HandleFunc(redirectURL.Path, func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			time.AfterFunc(time.Second, func() {
-				if err := srv.Shutdown(context.Background()); err != nil {
-					log.Fatal(err)
-				}
-			})
-		}()
+	shutdown := func() {
+		time.AfterFunc(time.Second, func() {
+			_ = srv.Shutdown(context.Background())
+		})
+	}
+
+	mux.HandleFunc(redirectURL.Path, func(w http.ResponseWriter, r *http.Request) {
+		defer shutdown()
+
+		var (
+			req Request
+			err error
+		)
 
 		if err = r.ParseForm(); err != nil {
-			log.Fatal(err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			mu.Lock()
+			resultErr = err
+			mu.Unlock()
 			return
 		}
 
-		request.Method = r.Method
-		request.URL = r.URL
-		request.Form = r.PostForm
+		req.Method = r.Method
+		req.URL = r.URL
+		req.Form = r.PostForm
 
-		if request.Get("response") != "" {
+		if req.Get("response") != "" {
 			var (
 				signingKey    jose.JSONWebKey
 				encryptionKey jose.JSONWebKey
 			)
 
 			if signingKey, err = ReadKey(SigningKey, serverConfig.JWKsURI, hc); err != nil {
-				log.Fatal(err)
+				http.Error(w, "failed to read signing key", http.StatusBadRequest)
+				mu.Lock()
+				resultErr = err
+				mu.Unlock()
 				return
 			}
 
 			if clientConfig.EncryptionKey != "" {
 				if encryptionKey, err = ReadKey(EncryptionKey, clientConfig.EncryptionKey, hc); err != nil {
-					log.Fatal(err)
+					http.Error(w, "failed to read encryption key", http.StatusBadRequest)
+					mu.Lock()
+					resultErr = err
+					mu.Unlock()
 					return
 				}
 			}
 
-			if err = request.ParseJARM(signingKey, encryptionKey); err != nil {
-				log.Fatal(err)
+			if err = req.ParseJARM(signingKey, encryptionKey); err != nil {
+				http.Error(w, "failed to parse JARM response", http.StatusBadRequest)
+				mu.Lock()
+				resultErr = err
+				mu.Unlock()
 				return
 			}
 		}
 
-		w.Header().Add("Content-Type", "text/html")
+		w.Header().Set("Content-Type", "text/html")
 
-		if request.Get("error") != "" {
+		if req.Get("error") != "" {
 			err = &Error{
-				ErrorCode:   request.Get("error"),
-				Description: request.Get("error_description"),
-				Hint:        request.Get("error_hint"),
-				TraceID:     request.Get("trace_id"),
+				ErrorCode:   req.Get("error"),
+				Description: req.Get("error_description"),
+				Hint:        req.Get("error_hint"),
+				TraceID:     req.Get("trace_id"),
 			}
-
 			w.WriteHeader(http.StatusBadRequest)
-
-			if _, err := w.Write([]byte(`<script>window.close()</script> Authorization failed. You may close this window.`)); err != nil {
-				log.Fatal(err)
-			}
+			_, _ = w.Write([]byte(`<script>window.close()</script> Authorization failed. You may close this window.`))
 		} else {
 			w.WriteHeader(http.StatusOK)
-			if _, err := w.Write([]byte(`<script>window.close()</script> Authorization succeeded. You may close this window.`)); err != nil {
-				log.Fatal(err)
-			}
+			_, _ = w.Write([]byte(`<script>window.close()</script> Authorization succeeded. You may close this window.`))
 		}
+
+		mu.Lock()
+		result = req
+		if resultErr == nil {
+			resultErr = err
+		}
+		mu.Unlock()
 	})
 
 	go func() {
 		defer close(done)
 
+		var serr error
 		if useTLS {
-			if serr := srv.ListenAndServeTLS("", ""); serr != http.ErrServerClosed {
-				err = serr
-			}
+			serr = srv.ListenAndServeTLS("", "")
 		} else {
-			if serr := srv.ListenAndServe(); serr != http.ErrServerClosed {
-				err = serr
+			serr = srv.ListenAndServe()
+		}
+		if serr != nil && !errors.Is(serr, http.ErrServerClosed) {
+			mu.Lock()
+			if resultErr == nil {
+				resultErr = serr
 			}
+			mu.Unlock()
 		}
 	}()
 
-	timeout := time.After(clientConfig.BrowserTimeout)
-
 	select {
-	case <-timeout:
-		return request, errors.New("timeout")
+	case <-time.After(clientConfig.BrowserTimeout):
+		_ = srv.Shutdown(context.Background())
+		return Request{}, errors.New("timeout")
 	case <-done:
-		return request, err
+		mu.Lock()
+		defer mu.Unlock()
+		return result, resultErr
 	}
 }
 
@@ -353,7 +386,7 @@ type TokenResponse struct {
 	TokenType            string           `json:"token_type,omitempty"`
 	AuthorizationDetails []map[string]any `json:"authorization_details,omitempty"`
 
-	raw map[string]json.RawMessage
+	raw map[string]jsontext.Value
 }
 
 type tokenResponseAlias TokenResponse
@@ -371,7 +404,7 @@ func (t *TokenResponse) UnmarshalJSON(data []byte) error {
 }
 
 func (t TokenResponse) MarshalJSON() ([]byte, error) {
-	var typedMap map[string]json.RawMessage
+	var typedMap map[string]jsontext.Value
 
 	typed, err := json.Marshal(tokenResponseAlias(t))
 	if err != nil {
@@ -386,7 +419,7 @@ func (t TokenResponse) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	out := make(map[string]json.RawMessage, len(t.raw))
+	out := make(map[string]jsontext.Value, len(t.raw))
 
 	maps.Copy(out, t.raw)
 	maps.Copy(out, typedMap)
@@ -397,8 +430,10 @@ func (t TokenResponse) MarshalJSON() ([]byte, error) {
 type FlexibleInt64 int64
 
 func (f *FlexibleInt64) UnmarshalJSON(b []byte) error {
-	if len(b) == 0 {
-		return fmt.Errorf("cannot unmarshal empty int")
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*f = 0
+		return nil
 	}
 
 	// check if we have a number in a string, and parse it if so

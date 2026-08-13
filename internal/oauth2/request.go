@@ -3,14 +3,14 @@ package oauth2
 import (
 	"crypto/sha256"
 	"crypto/x509"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/go-jose/go-jose/v4/jwt"
-	"github.com/hashicorp/go-multierror"
-	"github.com/lithammer/shortuuid/v4"
-	"github.com/pkg/errors"
+	"github.com/google/uuid"
 )
 
 type Request struct {
@@ -33,14 +33,14 @@ func (r *Request) AuthorizeRequest(
 ) (codeVerifier string, err error) {
 	nonce := cconfig.Nonce
 	if nonce == "" {
-		nonce = shortuuid.New()
+		nonce = uuid.NewString()
 	}
 
 	r.Nonce = nonce
 	r.Form = url.Values{
 		"client_id":    {cconfig.ClientID},
 		"redirect_uri": {cconfig.RedirectURL},
-		"state":        {shortuuid.New()},
+		"state":        {uuid.NewString()},
 		"nonce":        {nonce},
 	}
 
@@ -272,11 +272,11 @@ func (r *Request) ParseJARM(signingKey interface{}, encryptionKey interface{}) e
 
 	if nestedToken, err = jwt.ParseSignedAndEncrypted(response, JOSEKeyAlgorithms, JOSEContentEncryption, JOSESignatureAlgorithms); err != nil {
 		if token, err2 = jwt.ParseSigned(response, JOSESignatureAlgorithms); err2 != nil {
-			return errors.Wrapf(multierror.Append(err, err2), "failed to parse JARM response")
+			return fmt.Errorf("failed to parse JARM response: %w", errors.Join(err, err2))
 		}
 	} else if encryptionKey != nil {
 		if token, err = nestedToken.Decrypt(encryptionKey); err != nil {
-			return errors.Wrapf(err, "failed to decrypt encrypted JARM response")
+			return fmt.Errorf("failed to decrypt encrypted JARM response: %w", err)
 		}
 	} else {
 		return errors.New("no encryption key path")

@@ -1,4 +1,4 @@
-package oauth2_test
+package oauth2
 
 import (
 	"context"
@@ -7,10 +7,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
-
-	"github.com/stretchr/testify/require"
-
-	"github.com/cloudentity/oauth2c/internal/oauth2"
 )
 
 func TestAuthorizeRequestResource(t *testing.T) {
@@ -34,32 +30,31 @@ func TestAuthorizeRequestResource(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			r := &oauth2.Request{}
-			cconfig := oauth2.ClientConfig{
+			r := &Request{}
+			cconfig := ClientConfig{
 				ClientID:    "test-client",
 				RedirectURL: "http://localhost/callback",
 				Resource:    tc.resource,
 			}
 
-			_, err := r.AuthorizeRequest(cconfig, oauth2.ServerConfig{}, http.DefaultClient)
-			require.NoError(t, err)
-
-			require.Equal(t, tc.expected, r.Form["resource"])
+			_, err := r.AuthorizeRequest(cconfig, ServerConfig{}, http.DefaultClient)
+			noErr(t, err)
+			eq(t, r.Form["resource"], tc.expected)
 		})
 	}
 }
 
 func TestAuthorizeRequestNonce(t *testing.T) {
 	t.Run("unset generates nonce", func(t *testing.T) {
-		r := &oauth2.Request{}
-		_, err := r.AuthorizeRequest(oauth2.ClientConfig{
+		r := &Request{}
+		_, err := r.AuthorizeRequest(ClientConfig{
 			ClientID:    "test-client",
 			RedirectURL: "http://localhost/callback",
-		}, oauth2.ServerConfig{}, http.DefaultClient)
-		require.NoError(t, err)
-		require.NotEmpty(t, r.Form.Get("nonce"))
-		require.Equal(t, r.Form.Get("nonce"), r.Nonce)
-		require.NotEmpty(t, r.Form.Get("state"))
+		}, ServerConfig{}, http.DefaultClient)
+		noErr(t, err)
+		notEmpty(t, r.Form.Get("nonce"))
+		eq(t, r.Form.Get("nonce"), r.Nonce)
+		notEmpty(t, r.Form.Get("state"))
 	})
 
 	tests := map[string]struct {
@@ -80,28 +75,28 @@ func TestAuthorizeRequestNonce(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			r := &oauth2.Request{}
-			cconfig := oauth2.ClientConfig{
+			r := &Request{}
+			cconfig := ClientConfig{
 				ClientID:    "test-client",
 				RedirectURL: "http://localhost/callback",
 				Nonce:       tc.nonce,
 				PKCE:        tc.pkce,
 			}
 
-			codeVerifier, err := r.AuthorizeRequest(cconfig, oauth2.ServerConfig{}, http.DefaultClient)
-			require.NoError(t, err)
+			codeVerifier, err := r.AuthorizeRequest(cconfig, ServerConfig{}, http.DefaultClient)
+			noErr(t, err)
 
-			require.Equal(t, tc.wantForm, r.Form.Get("nonce"))
-			require.Equal(t, tc.wantForm, r.Nonce)
-			require.NotEmpty(t, r.Form.Get("state"))
+			eq(t, r.Form.Get("nonce"), tc.wantForm)
+			eq(t, r.Nonce, tc.wantForm)
+			notEmpty(t, r.Form.Get("state"))
 
 			if tc.pkce {
-				require.NotEmpty(t, codeVerifier)
-				require.NotEmpty(t, r.Form.Get("code_challenge"))
-				require.Equal(t, "S256", r.Form.Get("code_challenge_method"))
+				notEmpty(t, codeVerifier)
+				notEmpty(t, r.Form.Get("code_challenge"))
+				eq(t, r.Form.Get("code_challenge_method"), "S256")
 			} else {
-				require.Empty(t, codeVerifier)
-				require.Empty(t, r.Form.Get("code_challenge"))
+				empty(t, codeVerifier)
+				empty(t, r.Form.Get("code_challenge"))
 			}
 		})
 	}
@@ -132,29 +127,28 @@ func TestRequestTokenResource(t *testing.T) {
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
-				require.NoError(t, err)
+				noErr(t, err)
 
 				got, err = url.ParseQuery(string(body))
-				require.NoError(t, err)
+				noErr(t, err)
 
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"access_token":"tok","token_type":"Bearer","expires_in":3600}`))
 			}))
 			defer srv.Close()
 
-			cconfig := oauth2.ClientConfig{
+			cconfig := ClientConfig{
 				ClientID:     "test-client",
 				ClientSecret: "test-secret",
-				GrantType:    oauth2.ClientCredentialsGrantType,
-				AuthMethod:   oauth2.ClientSecretPostAuthMethod,
+				GrantType:    ClientCredentialsGrantType,
+				AuthMethod:   ClientSecretPostAuthMethod,
 				Resource:     tc.resource,
 			}
-			sconfig := oauth2.ServerConfig{TokenEndpoint: srv.URL}
+			sconfig := ServerConfig{TokenEndpoint: srv.URL}
 
-			_, _, err := oauth2.RequestToken(context.Background(), cconfig, sconfig, &http.Client{})
-			require.NoError(t, err)
-
-			require.Equal(t, tc.expected, got["resource"])
+			_, _, err := RequestToken(context.Background(), cconfig, sconfig, &http.Client{})
+			noErr(t, err)
+			eq(t, got["resource"], tc.expected)
 		})
 	}
 }
@@ -180,27 +174,26 @@ func TestRequestDeviceAuthorizationNonce(t *testing.T) {
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
-				require.NoError(t, err)
+				noErr(t, err)
 
 				got, err = url.ParseQuery(string(body))
-				require.NoError(t, err)
+				noErr(t, err)
 
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"device_code":"dev","user_code":"user","verification_uri":"https://example.com/device","expires_in":600}`))
 			}))
 			defer srv.Close()
 
-			cconfig := oauth2.ClientConfig{
+			cconfig := ClientConfig{
 				ClientID: "test-client",
 				Nonce:    tc.nonce,
 			}
-			sconfig := oauth2.ServerConfig{DeviceAuthorizationEndpoint: srv.URL}
+			sconfig := ServerConfig{DeviceAuthorizationEndpoint: srv.URL}
 
-			req, _, err := oauth2.RequestDeviceAuthorization(context.Background(), cconfig, sconfig, &http.Client{})
-			require.NoError(t, err)
-
-			require.Equal(t, tc.wantForm, got.Get("nonce"))
-			require.Equal(t, tc.wantForm, req.Nonce)
+			req, _, err := RequestDeviceAuthorization(context.Background(), cconfig, sconfig, &http.Client{})
+			noErr(t, err)
+			eq(t, got.Get("nonce"), tc.wantForm)
+			eq(t, req.Nonce, tc.wantForm)
 		})
 	}
 }

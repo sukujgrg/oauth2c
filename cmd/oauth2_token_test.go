@@ -56,7 +56,7 @@ func TestOAuth2NonBrowserGrantTypes(t *testing.T) {
 						"--scopes", "offline_access",
 						"--silent",
 					},
-					jq: ".refresh_token",
+					field: "refresh_token",
 				},
 			},
 		},
@@ -85,7 +85,7 @@ func TestOAuth2NonBrowserGrantTypes(t *testing.T) {
 						"--username", "demo", "--password", "demo",
 						"--silent",
 					},
-					jq: ".access_token",
+					field: "access_token",
 				},
 				"ACTOR_TOKEN": {
 					args: []string{
@@ -97,7 +97,7 @@ func TestOAuth2NonBrowserGrantTypes(t *testing.T) {
 						"--scopes", ClientCredentialsScopes,
 						"--silent",
 					},
-					jq: ".access_token",
+					field: "access_token",
 				},
 			},
 		},

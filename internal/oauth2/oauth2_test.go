@@ -1,13 +1,9 @@
-package oauth2_test
+package oauth2
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
+	"errors"
 	"testing"
-
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
-
-	"github.com/cloudentity/oauth2c/internal/oauth2"
 )
 
 func TestTokenResponseExtraFields(t *testing.T) {
@@ -20,82 +16,94 @@ func TestTokenResponseExtraFields(t *testing.T) {
 		"legal_entity_name": "oauth environment provider"
 	}`)
 
-	var resp oauth2.TokenResponse
-	require.NoError(t, json.Unmarshal(body, &resp))
+	var resp TokenResponse
+	noErr(t, json.Unmarshal(body, &resp))
 
-	require.Equal(t, "token", resp.AccessToken)
-	require.Equal(t, oauth2.FlexibleInt64(3600), resp.ExpiresIn)
-	require.Equal(t, "Bearer", resp.TokenType)
+	eq(t, resp.AccessToken, "token")
+	eq(t, resp.ExpiresIn, FlexibleInt64(3600))
+	eq(t, resp.TokenType, "Bearer")
 
 	out, err := json.Marshal(resp)
-	require.NoError(t, err)
+	noErr(t, err)
 
 	var roundTrip map[string]any
-	require.NoError(t, json.Unmarshal(out, &roundTrip))
+	noErr(t, json.Unmarshal(out, &roundTrip))
 
-	require.Equal(t, "token", roundTrip["access_token"])
-	require.Equal(t, "Bearer", roundTrip["token_type"])
-	require.Equal(t, "me@email.com", roundTrip["email"])
-	require.Equal(t, "envid-token-here", roundTrip["environment_id"])
-	require.Equal(t, "oauth environment provider", roundTrip["legal_entity_name"])
-	require.NotContains(t, roundTrip, "raw")
+	eq(t, roundTrip["access_token"], "token")
+	eq(t, roundTrip["token_type"], "Bearer")
+	eq(t, roundTrip["email"], "me@email.com")
+	eq(t, roundTrip["environment_id"], "envid-token-here")
+	eq(t, roundTrip["legal_entity_name"], "oauth environment provider")
+	if _, ok := roundTrip["raw"]; ok {
+		t.Fatal("round trip should not contain raw")
+	}
 }
 
 func TestTokenResponseNoExtraFields(t *testing.T) {
 	body := []byte(`{"access_token": "token", "expires_in": 3600, "token_type": "Bearer"}`)
 
-	var resp oauth2.TokenResponse
-	require.NoError(t, json.Unmarshal(body, &resp))
+	var resp TokenResponse
+	noErr(t, json.Unmarshal(body, &resp))
 
 	out, err := json.Marshal(resp)
-	require.NoError(t, err)
+	noErr(t, err)
 
 	var roundTrip map[string]any
-	require.NoError(t, json.Unmarshal(out, &roundTrip))
+	noErr(t, json.Unmarshal(out, &roundTrip))
 
-	require.Equal(t, "token", roundTrip["access_token"])
-	require.Equal(t, "Bearer", roundTrip["token_type"])
-	require.Len(t, roundTrip, 3)
+	eq(t, roundTrip["access_token"], "token")
+	eq(t, roundTrip["token_type"], "Bearer")
+	if len(roundTrip) != 3 {
+		t.Fatalf("len = %d, want 3", len(roundTrip))
+	}
 }
 
 func TestTokenResponseTypedFieldsWinOnConflict(t *testing.T) {
 	body := []byte(`{"access_token": "from-server", "expires_in": "3600"}`)
 
-	var resp oauth2.TokenResponse
-	require.NoError(t, json.Unmarshal(body, &resp))
+	var resp TokenResponse
+	noErr(t, json.Unmarshal(body, &resp))
 
 	resp.AccessToken = "overridden"
 
 	out, err := json.Marshal(resp)
-	require.NoError(t, err)
+	noErr(t, err)
 
 	var roundTrip map[string]any
-	require.NoError(t, json.Unmarshal(out, &roundTrip))
+	noErr(t, json.Unmarshal(out, &roundTrip))
 
-	require.Equal(t, "overridden", roundTrip["access_token"])
-	require.EqualValues(t, 3600, roundTrip["expires_in"])
+	eq(t, roundTrip["access_token"], "overridden")
+	switch v := roundTrip["expires_in"].(type) {
+	case float64:
+		if int64(v) != 3600 {
+			t.Fatalf("expires_in = %v, want 3600", v)
+		}
+	case int64:
+		if v != 3600 {
+			t.Fatalf("expires_in = %v, want 3600", v)
+		}
+	default:
+		t.Fatalf("expires_in type %T = %#v, want 3600", v, v)
+	}
 }
 
 func TestUnmarshalExpires(t *testing.T) {
 	tests := map[string]struct {
 		bytes         []byte
-		expectedValue oauth2.FlexibleInt64
+		expectedValue FlexibleInt64
 		expectedErr   error
 	}{
 		"number": {
 			bytes:         []byte(`{"expires_in": 3600}`),
 			expectedValue: 3600,
-			expectedErr:   nil,
 		},
 		"number string": {
 			bytes:         []byte(`{"expires_in": "3600"}`),
 			expectedValue: 3600,
-			expectedErr:   nil,
 		},
 		"null": {
 			bytes:         []byte(`{"expires_in": null}`),
 			expectedValue: 0,
-			expectedErr:   nil,
 		},
 		"other string": {
 			bytes:         []byte(`{"expires_in": "foo"}`),
@@ -106,14 +114,14 @@ func TestUnmarshalExpires(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			tokenResponse := oauth2.TokenResponse{}
+			tokenResponse := TokenResponse{}
 			err := json.Unmarshal(test.bytes, &tokenResponse)
 			if test.expectedErr != nil {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), test.expectedErr.Error())
+				isErr(t, err)
+				contains(t, err.Error(), test.expectedErr.Error())
 			} else {
-				require.NoError(t, err)
-				require.Equal(t, test.expectedValue, tokenResponse.ExpiresIn)
+				noErr(t, err)
+				eq(t, tokenResponse.ExpiresIn, test.expectedValue)
 			}
 		})
 	}

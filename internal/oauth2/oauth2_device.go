@@ -2,13 +2,11 @@ package oauth2
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 type DeviceAuthorizationResponse struct {
@@ -27,7 +25,7 @@ func RequestDeviceAuthorization(ctx context.Context, cconfig ClientConfig, sconf
 	)
 
 	if sconfig.DeviceAuthorizationEndpoint == "" {
-		return request, response, errors.New("the server's device authorization endpoint is not configured")
+		return request, response, fmt.Errorf("the server's device authorization endpoint is not configured")
 	}
 
 	request.Form = url.Values{
@@ -76,7 +74,7 @@ func RequestDeviceAuthorization(ctx context.Context, cconfig ClientConfig, sconf
 		return request, response, ParseError(resp)
 	}
 
-	if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
+	if err = json.UnmarshalRead(resp.Body, &response); err != nil {
 		return request, response, fmt.Errorf("failed to parse token response: %w", err)
 	}
 

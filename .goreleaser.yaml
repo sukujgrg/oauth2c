@@ -2,10 +2,10 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - go generate ./...
 builds:
   - env:
       - CGO_ENABLED=0
+      - GOEXPERIMENT=jsonv2
     goos:
       - linux
       - windows
@@ -32,15 +32,3 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
-brews:
-  - repository:
-      owner: cloudentity
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
-    homepage: "https://github.com/cloudentity/oauth2c"
-    description: "CLI for OAuth2"
-
-# modelines, feel free to remove those if you don't want/use them:
-# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# vim: set ts=2 sw=2 tw=0 fo=cnqoj

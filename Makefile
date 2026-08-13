@@ -1,3 +1,5 @@
+export GOEXPERIMENT=jsonv2
+
 install:
 	go install .
 
