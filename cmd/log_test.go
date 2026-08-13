@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sukujgrg/oauth2c/internal/oauth2"
 	"github.com/go-jose/go-jose/v4"
+	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
 func TestLogAccessTokenPayload(t *testing.T) {
@@ -95,13 +95,13 @@ func TestLogInputData(t *testing.T) {
 	got := output.String()
 	eq(t, got, strings.Join([]string{
 		"issuer_url: https://example.com",
+		"client_id: client",
 		"grant_type: authorization_code",
 		"auth_method: none",
-		"scopes: openid, email",
 		"response_types: code",
+		"scopes: openid, email",
 		"pkce: true",
 		"nonce: n-0S6_WzA2Mj",
-		"client_id: client",
 		"",
 		"",
 	}, "\n"))
@@ -138,6 +138,66 @@ func TestLogPKCE(t *testing.T) {
 		"",
 		"",
 	}, "\n"))
+}
+
+func TestLogSectionSpacing(t *testing.T) {
+	output := captureLogOutput(t)
+
+	LogInputData(oauth2.ClientConfig{
+		IssuerURL: "https://example.com",
+		GrantType: "authorization_code",
+		ClientID:  "client",
+	})
+	LogRequestln(oauth2.Request{
+		Method: "GET",
+		URL:    mustParseURL(t, "https://example.com/authorize?client_id=client"),
+	})
+	LogPKCE("verifier")
+	LogAuthURL("https://example.com/authorize?client_id=client", true)
+	LogWaiting("callback")
+	LogRequestln(oauth2.Request{
+		Method: "GET",
+		URL:    mustParseURL(t, "/callback?code=abc"),
+	})
+	LogTokenPayload(oauth2.TokenResponse{
+		AccessToken: "opaque-access-token",
+		IDToken:     "opaque-id-token",
+	})
+
+	got := output.String()
+	eq(t, got, strings.Join([]string{
+		"issuer_url: https://example.com",
+		"client_id: client",
+		"grant_type: authorization_code",
+		"",
+		"GET https://example.com/authorize",
+		"  client_id: client",
+		"",
+		"pkce:",
+		"  code_verifier: verifier",
+		"  code_challenge: S256(code_verifier)",
+		"",
+		"url: https://example.com/authorize?client_id=client",
+		"",
+		"waiting: callback",
+		"",
+		"GET /callback",
+		"  code: abc",
+		"",
+		"access_token: (opaque)",
+		"",
+		"id_token: (opaque)",
+		"",
+		"",
+	}, "\n"))
+	notContains(t, got, "\n\n\n")
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	noErr(t, err)
+	return u
 }
 
 func captureLogOutput(t *testing.T) *bytes.Buffer {

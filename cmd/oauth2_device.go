@@ -31,7 +31,6 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 	}
 
 	LogAuthURL(verificationUri, clientConfig.NoBrowser)
-	Logln()
 
 	LogWaiting("token")
 

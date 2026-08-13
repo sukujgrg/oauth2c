@@ -58,15 +58,16 @@ func logBlock(name string, rows [][2]string) {
 		}
 		logf("  %s: %s", row[0], row[1])
 	}
-	logln()
+	endSection()
 }
 
-func Logln() {
+func endSection() {
 	logln()
 }
 
 func LogWaiting(msg string) {
 	logKV("waiting", msg)
+	endSection()
 }
 
 func LogError(err error) {
@@ -81,20 +82,27 @@ func LogWarning(msg string) {
 	logf("warning: %s", msg)
 }
 
+func trueFlag(v bool) string {
+	if !v {
+		return ""
+	}
+	return "true"
+}
+
 func LogInputData(cc oauth2.ClientConfig) {
 	rows := [][2]string{
 		{"issuer_url", cc.IssuerURL},
-		{"grant_type", cc.GrantType},
-		{"auth_method", cc.AuthMethod},
-		{"scopes", strings.Join(cc.Scopes, ", ")},
-		{"acr_values", strings.Join(cc.ACRValues, ", ")},
-		{"audience", strings.Join(cc.Audience, ", ")},
-		{"response_types", strings.Join(cc.ResponseType, ", ")},
-		{"response_mode", cc.ResponseMode},
-		{"pkce", strconv.FormatBool(cc.PKCE)},
-		{"nonce", cc.Nonce},
 		{"client_id", cc.ClientID},
 		{"client_secret", cc.ClientSecret},
+		{"grant_type", cc.GrantType},
+		{"auth_method", cc.AuthMethod},
+		{"response_types", strings.Join(cc.ResponseType, ", ")},
+		{"response_mode", cc.ResponseMode},
+		{"scopes", strings.Join(cc.Scopes, ", ")},
+		{"audience", strings.Join(cc.Audience, ", ")},
+		{"acr_values", strings.Join(cc.ACRValues, ", ")},
+		{"pkce", trueFlag(cc.PKCE)},
+		{"nonce", cc.Nonce},
 		{"username", cc.Username},
 		{"password", cc.Password},
 		{"refresh_token", cc.RefreshToken},
@@ -109,10 +117,10 @@ func LogInputData(cc oauth2.ClientConfig) {
 	for _, row := range rows {
 		logKV(row[0], row[1])
 	}
-	logln()
+	endSection()
 }
 
-func LogJson(value interface{}) {
+func logJSON(key string, value interface{}) {
 	if silent {
 		return
 	}
@@ -123,6 +131,9 @@ func LogJson(value interface{}) {
 		return
 	}
 
+	if key != "" {
+		logf("%s:", key)
+	}
 	for line := range strings.SplitSeq(strings.TrimRight(string(output), "\n"), "\n") {
 		logf("  %s", line)
 	}
@@ -177,7 +188,7 @@ func LogRequestln(request oauth2.Request) {
 	}
 
 	LogRequest(request)
-	logln()
+	endSection()
 }
 
 func LogRequestAndResponse(request oauth2.Request, response interface{}) {
@@ -186,9 +197,8 @@ func LogRequestAndResponse(request oauth2.Request, response interface{}) {
 	}
 
 	LogRequest(request)
-	logf("response:")
-	LogJson(response)
-	logln()
+	logJSON("response", response)
+	endSection()
 }
 
 func LogRequestAndResponseln(request oauth2.Request, response interface{}) {
@@ -211,26 +221,23 @@ func LogAccessTokenPayload(label, token string) {
 
 	_, claims, err := oauth2.UnsafeParseJWT(token)
 	if err == nil {
-		logf("%s:", label)
-		LogJson(claims)
+		logJSON(label, claims)
+		endSection()
 		return
 	}
 
 	if _, encErr := jose.ParseEncrypted(token, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); encErr == nil {
 		logKV(label, "(jwe)")
+		endSection()
 		return
 	}
 
 	logKV(label, "(opaque)")
+	endSection()
 }
 
 func LogTokenPayloadln(response oauth2.TokenResponse) {
-	if silent {
-		return
-	}
-
 	LogTokenPayload(response)
-	logln()
 }
 
 func LogPKCE(codeVerifier string) {
@@ -285,9 +292,8 @@ func LogJARM(request oauth2.Request) {
 		return
 	}
 
-	logf("jarm:")
-	LogJson(request.JARM)
-	logln()
+	logJSON("jarm", request.JARM)
+	endSection()
 }
 
 func LogRequestObject(r oauth2.Request) {
@@ -318,8 +324,8 @@ func LogRequestObject(r oauth2.Request) {
 		logKV("request_object", fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
 	}
 
-	LogJson(requestClaims)
-	logln()
+	logJSON("", requestClaims)
+	endSection()
 }
 
 func LogAssertion(request oauth2.Request, name string) {
@@ -340,8 +346,8 @@ func LogAssertion(request oauth2.Request, name string) {
 	}
 
 	logKV(name, fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
-	LogJson(claims)
-	logln()
+	logJSON("", claims)
+	endSection()
 }
 
 func LogSubjectTokenAndActorToken(request oauth2.Request) {
@@ -351,10 +357,6 @@ func LogSubjectTokenAndActorToken(request oauth2.Request) {
 
 	LogAccessTokenPayload("subject_token", request.Form.Get("subject_token"))
 	LogAccessTokenPayload("actor_token", request.Form.Get("actor_token"))
-
-	if request.Form.Get("subject_token") != "" || request.Form.Get("actor_token") != "" {
-		logln()
-	}
 }
 
 func LogAuthURL(url string, noBrowser bool) {
@@ -364,6 +366,7 @@ func LogAuthURL(url string, noBrowser bool) {
 	}
 
 	logKV("url", url)
+	endSection()
 
 	if !noBrowser {
 		if err := browser.OpenURL(url); err != nil {
