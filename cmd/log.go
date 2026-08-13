@@ -22,6 +22,12 @@ import (
 
 var logOut io.Writer = os.Stderr
 
+const indentUnit = "  "
+
+func pad(level int) string {
+	return strings.Repeat(indentUnit, level)
+}
+
 func logln() {
 	if silent {
 		return
@@ -38,12 +44,20 @@ func logf(msg string, args ...interface{}) {
 	_, _ = fmt.Fprintf(logOut, msg+"\n", args...)
 }
 
+func logfAt(level int, msg string, args ...interface{}) {
+	logf(pad(level)+msg, args...)
+}
+
 func logKV(key, value string) {
+	logKVAt(0, key, value)
+}
+
+func logKVAt(level int, key, value string) {
 	if value == "" {
 		return
 	}
 
-	logf("%s: %s", key, value)
+	logfAt(level, "%s: %s", key, value)
 }
 
 func logBlock(name string, rows [][2]string) {
@@ -53,10 +67,7 @@ func logBlock(name string, rows [][2]string) {
 
 	logf("%s:", name)
 	for _, row := range rows {
-		if row[1] == "" {
-			continue
-		}
-		logf("  %s: %s", row[0], row[1])
+		logKVAt(1, row[0], row[1])
 	}
 	endSection()
 }
@@ -121,21 +132,26 @@ func LogInputData(cc oauth2.ClientConfig) {
 }
 
 func logJSON(key string, value interface{}) {
+	logJSONAt(0, key, value)
+}
+
+func logJSONAt(level int, key string, value interface{}) {
 	if silent {
 		return
 	}
 
-	output, err := json.Marshal(value, jsontext.WithIndent("  "))
+	output, err := json.Marshal(value, jsontext.WithIndent(indentUnit))
 	if err != nil {
 		LogError(err)
 		return
 	}
 
 	if key != "" {
-		logf("%s:", key)
+		logfAt(level, "%s:", key)
+		level++
 	}
 	for line := range strings.SplitSeq(strings.TrimRight(string(output), "\n"), "\n") {
-		logf("  %s", line)
+		logfAt(level, "%s", line)
 	}
 }
 
@@ -154,19 +170,19 @@ func LogRequest(r oauth2.Request) {
 		logf("%s %s", r.Method, r.URL.Path)
 	}
 
-	logPairs(r.Headers)
-	logPairs(r.URL.Query())
-	logPairs(r.Form)
+	logPairs(1, r.Headers)
+	logPairs(1, r.URL.Query())
+	logPairs(1, r.Form)
 
 	if r.Cert != nil {
-		logf("  certificate_subject: %s", r.Cert.Subject)
-		logf("  certificate_issuer: %s", r.Cert.Issuer)
-		logf("  certificate_not_before: %s", r.Cert.NotBefore.UTC().Format(time.RFC3339))
-		logf("  certificate_not_after: %s", r.Cert.NotAfter.UTC().Format(time.RFC3339))
+		logKVAt(1, "certificate_subject", r.Cert.Subject.String())
+		logKVAt(1, "certificate_issuer", r.Cert.Issuer.String())
+		logKVAt(1, "certificate_not_before", r.Cert.NotBefore.UTC().Format(time.RFC3339))
+		logKVAt(1, "certificate_not_after", r.Cert.NotAfter.UTC().Format(time.RFC3339))
 	}
 }
 
-func logPairs(values map[string][]string) {
+func logPairs(level int, values map[string][]string) {
 	if len(values) == 0 {
 		return
 	}
@@ -178,7 +194,7 @@ func logPairs(values map[string][]string) {
 	slices.Sort(keys)
 
 	for _, k := range keys {
-		logf("  %s: %s", k, strings.Join(values[k], ", "))
+		logKVAt(level, k, strings.Join(values[k], ", "))
 	}
 }
 
@@ -197,7 +213,7 @@ func LogRequestAndResponse(request oauth2.Request, response interface{}) {
 	}
 
 	LogRequest(request)
-	logJSON("response", response)
+	logJSONAt(1, "response", response)
 	endSection()
 }
 
@@ -324,7 +340,7 @@ func LogRequestObject(r oauth2.Request) {
 		logKV("request_object", fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
 	}
 
-	logJSON("", requestClaims)
+	logJSONAt(1, "", requestClaims)
 	endSection()
 }
 
@@ -346,7 +362,7 @@ func LogAssertion(request oauth2.Request, name string) {
 	}
 
 	logKV(name, fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
-	logJSON("", claims)
+	logJSONAt(1, "", claims)
 	endSection()
 }
 
