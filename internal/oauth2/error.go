@@ -34,11 +34,15 @@ func (e *Error) Error() string {
 		fmt.Fprintf(&output, "%s caused by %s ", e.ErrorCode, e.Cause)
 		return fmt.Sprintf("%d: %s caused by %s (%s)", e.StatusCode, e.ErrorCode, e.Cause, e.TraceID)
 	} else {
-		fmt.Fprintf(&output, "%s ", e.ErrorCode)
+		fmt.Fprintf(&output, "%s", e.ErrorCode)
+	}
+
+	if e.Description != "" {
+		fmt.Fprintf(&output, ": %s", e.Description)
 	}
 
 	if e.TraceID != "" {
-		fmt.Fprintf(&output, "(%s)", e.TraceID)
+		fmt.Fprintf(&output, " (%s)", e.TraceID)
 	}
 
 	return strings.TrimSpace(output.String())
