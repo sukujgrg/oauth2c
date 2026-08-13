@@ -95,13 +95,13 @@ func TestLogInputData(t *testing.T) {
 	got := output.String()
 	eq(t, got, strings.Join([]string{
 		"issuer_url: https://example.com",
+		"client_id: client",
 		"grant_type: authorization_code",
 		"auth_method: none",
-		"scopes: openid, email",
 		"response_types: code",
+		"scopes: openid, email",
 		"pkce: true",
 		"nonce: n-0S6_WzA2Mj",
-		"client_id: client",
 		"",
 		"",
 	}, "\n"))
@@ -167,9 +167,8 @@ func TestLogSectionSpacing(t *testing.T) {
 	got := output.String()
 	eq(t, got, strings.Join([]string{
 		"issuer_url: https://example.com",
-		"grant_type: authorization_code",
-		"pkce: false",
 		"client_id: client",
+		"grant_type: authorization_code",
 		"",
 		"GET https://example.com/authorize",
 		"  client_id: client",

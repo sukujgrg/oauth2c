@@ -82,20 +82,27 @@ func LogWarning(msg string) {
 	logf("warning: %s", msg)
 }
 
+func trueFlag(v bool) string {
+	if !v {
+		return ""
+	}
+	return "true"
+}
+
 func LogInputData(cc oauth2.ClientConfig) {
 	rows := [][2]string{
 		{"issuer_url", cc.IssuerURL},
-		{"grant_type", cc.GrantType},
-		{"auth_method", cc.AuthMethod},
-		{"scopes", strings.Join(cc.Scopes, ", ")},
-		{"acr_values", strings.Join(cc.ACRValues, ", ")},
-		{"audience", strings.Join(cc.Audience, ", ")},
-		{"response_types", strings.Join(cc.ResponseType, ", ")},
-		{"response_mode", cc.ResponseMode},
-		{"pkce", strconv.FormatBool(cc.PKCE)},
-		{"nonce", cc.Nonce},
 		{"client_id", cc.ClientID},
 		{"client_secret", cc.ClientSecret},
+		{"grant_type", cc.GrantType},
+		{"auth_method", cc.AuthMethod},
+		{"response_types", strings.Join(cc.ResponseType, ", ")},
+		{"response_mode", cc.ResponseMode},
+		{"scopes", strings.Join(cc.Scopes, ", ")},
+		{"audience", strings.Join(cc.Audience, ", ")},
+		{"acr_values", strings.Join(cc.ACRValues, ", ")},
+		{"pkce", trueFlag(cc.PKCE)},
+		{"nonce", cc.Nonce},
 		{"username", cc.Username},
 		{"password", cc.Password},
 		{"refresh_token", cc.RefreshToken},
