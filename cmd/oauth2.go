@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/cli/browser"
-	"github.com/sukujgrg/oauth2c/internal/oauth2"
 	"github.com/spf13/cobra"
+	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
 var silent bool

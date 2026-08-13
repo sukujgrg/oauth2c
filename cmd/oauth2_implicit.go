@@ -19,7 +19,6 @@ func (c *OAuth2Cmd) ImplicitGrantFlow(clientConfig oauth2.ClientConfig, serverCo
 
 	LogRequestln(authorizeRequest)
 	LogAuthURL(authorizeRequest.URL.String(), clientConfig.NoBrowser)
-	Logln()
 
 	LogWaiting("callback")
 

@@ -41,7 +41,6 @@ func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig,
 
 	LogPKCE(codeVerifier)
 	LogAuthURL(authorizeRequest.URL.String(), clientConfig.NoBrowser)
-	Logln()
 
 	LogWaiting("callback")
 
