@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,41 +38,35 @@ func logf(msg string, args ...interface{}) {
 	fmt.Fprintf(logOut, msg+"\n", args...)
 }
 
-func Logln() {
-	logln()
-}
-
-func Logfln(msg string, args ...interface{}) {
-	logf(msg, args...)
-}
-
-func LogHeader(msg string) {
-	logf("%s", msg)
-}
-
-func LogSection(msg string) {
-	logf("%s", msg)
-}
-
-func LogAction(msg string) func(string) {
-	if silent {
-		return func(string) {}
+func logKV(key, value string) {
+	if value == "" {
+		return
 	}
 
-	logf("%s", msg)
-	return func(s string) {
-		logf("%s", s)
-		logln()
-	}
+	logf("%s: %s", key, value)
 }
 
-func LogBox(title string, msg string, args ...interface{}) {
+func logBlock(name string, rows [][2]string) {
 	if silent {
 		return
 	}
 
-	logf("%s", title)
-	logf(msg, args...)
+	logf("%s:", name)
+	for _, row := range rows {
+		if row[1] == "" {
+			continue
+		}
+		logf("  %s: %s", row[0], row[1])
+	}
+	logln()
+}
+
+func Logln() {
+	logln()
+}
+
+func LogWaiting(msg string) {
+	logKV("waiting", msg)
 }
 
 func LogError(err error) {
@@ -79,50 +74,41 @@ func LogError(err error) {
 		return
 	}
 
-	fmt.Fprintf(logOut, "Error: %s\n", err)
+	fmt.Fprintf(logOut, "error: %s\n", err)
 }
 
 func LogWarning(msg string) {
-	logf("Warning: %s", msg)
+	logf("warning: %s", msg)
 }
 
 func LogInputData(cc oauth2.ClientConfig) {
-	if silent {
-		return
-	}
-
 	rows := [][2]string{
-		{"Issuer URL", cc.IssuerURL},
-		{"Grant type", cc.GrantType},
-		{"Auth method", cc.AuthMethod},
-		{"Scopes", strings.Join(cc.Scopes, ", ")},
-		{"ACR Values", strings.Join(cc.ACRValues, ", ")},
-		{"Audience", strings.Join(cc.Audience, ", ")},
-		{"Response types", strings.Join(cc.ResponseType, ", ")},
-		{"Response mode", cc.ResponseMode},
-		{"PKCE", strconv.FormatBool(cc.PKCE)},
-		{"Nonce", cc.Nonce},
-		{"Client ID", cc.ClientID},
-		{"Client secret", cc.ClientSecret},
-		{"Username", cc.Username},
-		{"Password", cc.Password},
-		{"Refresh token", cc.RefreshToken},
-		{"Signing key", cc.SigningKey},
-		{"Subject token type", cc.SubjectTokenType},
-		{"Actors token type", cc.ActorTokenType},
-		{"TLS client cert", cc.TLSCert},
-		{"TLS client key", cc.TLSKey},
-		{"TLS root CA", cc.TLSRootCA},
+		{"issuer_url", cc.IssuerURL},
+		{"grant_type", cc.GrantType},
+		{"auth_method", cc.AuthMethod},
+		{"scopes", strings.Join(cc.Scopes, ", ")},
+		{"acr_values", strings.Join(cc.ACRValues, ", ")},
+		{"audience", strings.Join(cc.Audience, ", ")},
+		{"response_types", strings.Join(cc.ResponseType, ", ")},
+		{"response_mode", cc.ResponseMode},
+		{"pkce", strconv.FormatBool(cc.PKCE)},
+		{"nonce", cc.Nonce},
+		{"client_id", cc.ClientID},
+		{"client_secret", cc.ClientSecret},
+		{"username", cc.Username},
+		{"password", cc.Password},
+		{"refresh_token", cc.RefreshToken},
+		{"signing_key", cc.SigningKey},
+		{"subject_token_type", cc.SubjectTokenType},
+		{"actor_token_type", cc.ActorTokenType},
+		{"tls_cert", cc.TLSCert},
+		{"tls_key", cc.TLSKey},
+		{"tls_root_ca", cc.TLSRootCA},
 	}
 
 	for _, row := range rows {
-		if row[1] == "" {
-			continue
-		}
-
-		logf("%-22s %s", row[0], row[1])
+		logKV(row[0], row[1])
 	}
-
 	logln()
 }
 
@@ -137,7 +123,9 @@ func LogJson(value interface{}) {
 		return
 	}
 
-	fmt.Fprintln(logOut, string(output))
+	for line := range strings.SplitSeq(strings.TrimRight(string(output), "\n"), "\n") {
+		logf("  %s", line)
+	}
 }
 
 func LogRequest(r oauth2.Request) {
@@ -155,37 +143,31 @@ func LogRequest(r oauth2.Request) {
 		logf("%s %s", r.Method, r.URL.Path)
 	}
 
-	if len(r.Headers) > 0 {
-		logf("Headers:")
-	}
-
-	for k, vs := range r.Headers {
-		logf("  %s: %s", k, strings.Join(vs, ", "))
-	}
-
-	if len(r.URL.Query()) > 0 {
-		logf("Query params:")
-	}
-
-	for k, vs := range r.URL.Query() {
-		logf("  %s: %s", k, strings.Join(vs, ", "))
-	}
-
-	if len(r.Form) > 0 {
-		logf("Form post:")
-	}
-
-	for k, vs := range r.Form {
-		logf("  %s: %s", k, strings.Join(vs, ", "))
-	}
+	logPairs(r.Headers)
+	logPairs(r.URL.Query())
+	logPairs(r.Form)
 
 	if r.Cert != nil {
-		logln()
-		logf("Certificate:")
-		logf("  Subject: %s", r.Cert.Subject)
-		logf("  Issuer: %s", r.Cert.Issuer)
-		logf("  NotBefore: %s", r.Cert.NotBefore.UTC().Format(time.RFC3339))
-		logf("  NotAfter: %s", r.Cert.NotAfter.UTC().Format(time.RFC3339))
+		logf("  certificate_subject: %s", r.Cert.Subject)
+		logf("  certificate_issuer: %s", r.Cert.Issuer)
+		logf("  certificate_not_before: %s", r.Cert.NotBefore.UTC().Format(time.RFC3339))
+		logf("  certificate_not_after: %s", r.Cert.NotAfter.UTC().Format(time.RFC3339))
+	}
+}
+
+func logPairs(values map[string][]string) {
+	if len(values) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+
+	for _, k := range keys {
+		logf("  %s: %s", k, strings.Join(values[k], ", "))
 	}
 }
 
@@ -204,39 +186,22 @@ func LogRequestAndResponse(request oauth2.Request, response interface{}) {
 	}
 
 	LogRequest(request)
-	logf("Response:")
+	logf("response:")
 	LogJson(response)
-}
-
-func LogRequestAndResponseln(request oauth2.Request, response interface{}) {
-	if silent {
-		return
-	}
-
-	LogRequestAndResponse(request, response)
 	logln()
 }
 
-func LogTokenPayload(response oauth2.TokenResponse) {
-	var (
-		idClaims map[string]interface{}
-		err      error
-	)
+func LogRequestAndResponseln(request oauth2.Request, response interface{}) {
+	LogRequestAndResponse(request, response)
+}
 
+func LogTokenPayload(response oauth2.TokenResponse) {
 	if silent {
 		return
 	}
 
-	LogAccessTokenPayload("Access token", response.AccessToken)
-
-	if response.IDToken != "" {
-		if _, idClaims, err = oauth2.UnsafeParseJWT(response.IDToken); err != nil {
-			LogError(err)
-		} else {
-			logf("ID token:")
-			LogJson(idClaims)
-		}
-	}
+	LogAccessTokenPayload("access_token", response.AccessToken)
+	LogAccessTokenPayload("id_token", response.IDToken)
 }
 
 func LogAccessTokenPayload(label, token string) {
@@ -245,13 +210,18 @@ func LogAccessTokenPayload(label, token string) {
 	}
 
 	_, claims, err := oauth2.UnsafeParseJWT(token)
-	if err != nil {
-		logf("%s: (opaque or non-JWT)", label)
+	if err == nil {
+		logf("%s:", label)
+		LogJson(claims)
 		return
 	}
 
-	logf("%s:", label)
-	LogJson(claims)
+	if _, encErr := jose.ParseEncrypted(token, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); encErr == nil {
+		logKV(label, "(jwe)")
+		return
+	}
+
+	logKV(label, "(opaque)")
 }
 
 func LogTokenPayloadln(response oauth2.TokenResponse) {
@@ -261,6 +231,17 @@ func LogTokenPayloadln(response oauth2.TokenResponse) {
 
 	LogTokenPayload(response)
 	logln()
+}
+
+func LogPKCE(codeVerifier string) {
+	if codeVerifier == "" {
+		return
+	}
+
+	logBlock("pkce", [][2]string{
+		{"code_verifier", codeVerifier},
+		{"code_challenge", "S256(code_verifier)"},
+	})
 }
 
 func CheckNonce(expected, idToken string, clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
@@ -279,34 +260,34 @@ func CheckNonce(expected, idToken string, clientConfig oauth2.ClientConfig, serv
 			received = "(unverified)"
 		}
 
-		LogBox("Nonce", "nonce = %s\nID Token nonce = %s\nmatch = %t", expected, received, err == nil)
-		logln()
+		logBlock("nonce", [][2]string{
+			{"sent", expected},
+			{"id_token", received},
+			{"match", strconv.FormatBool(err == nil)},
+		})
 	}
 
 	return err
 }
 
 func LogAuthMethod(config oauth2.ClientConfig) {
-	if silent {
+	if config.AuthMethod != oauth2.ClientSecretBasicAuthMethod {
 		return
 	}
 
-	switch config.AuthMethod {
-	case oauth2.ClientSecretBasicAuthMethod:
-		LogBox("Client Secret Basic", "Authorization = Basic BASE64-ENCODE(ClientID:ClientSecret)")
-		logln()
-	}
+	logBlock("auth", [][2]string{
+		{"authorization", "Basic BASE64(client_id:client_secret)"},
+	})
 }
 
 func LogJARM(request oauth2.Request) {
-	if silent {
+	if silent || len(request.JARM) == 0 {
 		return
 	}
 
-	if len(request.JARM) != 0 {
-		logf("JARM:")
-		LogJson(request.JARM)
-	}
+	logf("jarm:")
+	LogJson(request.JARM)
+	logln()
 }
 
 func LogRequestObject(r oauth2.Request) {
@@ -322,29 +303,26 @@ func LogRequestObject(r oauth2.Request) {
 		request = r.Form.Get("request")
 	}
 
-	if silent {
+	if silent || request == "" {
 		return
 	}
 
-	if request != "" {
-		if token, requestClaims, err = oauth2.UnsafeParseJWT(r.RequestObject); err != nil {
-			LogError(err)
-		} else {
-			if encryptedToken, err = jose.ParseEncrypted(request, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); err == nil {
-				LogBox("Request object", "request = JWE-%s(JWT-%s(payload))", encryptedToken.Header.Algorithm, token.Headers[0].Algorithm)
-			} else {
-				LogBox("Request object", "request = JWT-%s(payload)", token.Headers[0].Algorithm)
-			}
-
-			logln()
-			logf("Payload")
-			LogJson(requestClaims)
-			logln()
-		}
+	if token, requestClaims, err = oauth2.UnsafeParseJWT(r.RequestObject); err != nil {
+		LogError(err)
+		return
 	}
+
+	if encryptedToken, err = jose.ParseEncrypted(request, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); err == nil {
+		logKV("request_object", fmt.Sprintf("JWE-%s(JWT-%s)", encryptedToken.Header.Algorithm, token.Headers[0].Algorithm))
+	} else {
+		logKV("request_object", fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
+	}
+
+	LogJson(requestClaims)
+	logln()
 }
 
-func LogAssertion(request oauth2.Request, title string, name string) {
+func LogAssertion(request oauth2.Request, name string) {
 	var (
 		assertion = request.Form.Get(name)
 		token     *jwt.JSONWebToken
@@ -352,11 +330,7 @@ func LogAssertion(request oauth2.Request, title string, name string) {
 		err       error
 	)
 
-	if silent {
-		return
-	}
-
-	if assertion == "" {
+	if silent || assertion == "" {
 		return
 	}
 
@@ -365,27 +339,20 @@ func LogAssertion(request oauth2.Request, title string, name string) {
 		return
 	}
 
-	LogBox(title, "%s = JWT-%s(payload)", name, token.Headers[0].Algorithm)
-	logln()
-	logf("Payload")
+	logKV(name, fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
 	LogJson(claims)
 	logln()
 }
 
 func LogSubjectTokenAndActorToken(request oauth2.Request) {
-	var (
-		subjectToken = request.Form.Get("subject_token")
-		actorToken   = request.Form.Get("actor_token")
-	)
-
 	if silent {
 		return
 	}
 
-	LogAccessTokenPayload("Subject token", subjectToken)
-	LogAccessTokenPayload("Actor token", actorToken)
+	LogAccessTokenPayload("subject_token", request.Form.Get("subject_token"))
+	LogAccessTokenPayload("actor_token", request.Form.Get("actor_token"))
 
-	if subjectToken != "" || actorToken != "" {
+	if request.Form.Get("subject_token") != "" || request.Form.Get("actor_token") != "" {
 		logln()
 	}
 }
@@ -393,12 +360,12 @@ func LogSubjectTokenAndActorToken(request oauth2.Request) {
 func LogAuthURL(url string, noBrowser bool) {
 	if noBrowser && silent {
 		fmt.Fprintln(os.Stderr, url)
-	} else {
-		Logfln("\nGo to the following URL:\n\n%s", url)
+		return
 	}
 
+	logKV("url", url)
+
 	if !noBrowser {
-		Logfln("\nOpening browser...")
 		if err := browser.OpenURL(url); err != nil {
 			LogError(err)
 		}

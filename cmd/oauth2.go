@@ -134,11 +134,7 @@ func (c *OAuth2Cmd) Run(cconfig *oauth2.ClientConfig, sconfig *oauth2.ServerConf
 			os.Exit(1)
 		}
 
-		if silent {
-			browser.Stdout = io.Discard
-		} else {
-			browser.Stdout = os.Stderr
-		}
+		browser.Stdout = io.Discard
 
 		tr := &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
