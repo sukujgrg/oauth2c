@@ -6,10 +6,11 @@
 #   A free Auth0 tenant (https://manage.auth0.com/)
 #   brew install auth0
 #   auth0 login
-#   auth0 tenants use <your-tenant>.auth0.com
+#   auth0 tenants use <your-tenant>.us.auth0.com   # or .eu.auth0.com / .au.auth0.com
 #
-# Optional extra Management API scopes if client grants or tenant settings fail:
-#   auth0 login --scopes "create:client_grants,read:client_grants,update:tenant_settings,read:connections,update:connections,update:users"
+# Optional extra Management API scopes if client grants, tenant settings, or
+# the demo user fail:
+#   auth0 login --scopes "create:client_grants,read:client_grants,update:tenant_settings,read:connections,update:connections,create:users,read:users,update:users"
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,25 +19,28 @@ AUDIENCE="https://oauth2c.local"
 CALLBACK="http://localhost:9876/callback"
 CALLBACK_TLS="https://localhost:9876/callback"
 EMAIL="oauth2c-demo@example.com"
+EMAIL_SET=0
 ENV_FILE="$ROOT/.env.auth0"
 TENANT="${AUTH0_DOMAIN:-}"
 API_SCOPE="demo:read"
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 Usage: scripts/setup-auth0.sh [options]
 
 Prerequisite: a free Auth0 tenant at https://manage.auth0.com/
 
-  --tenant DOMAIN     Auth0 tenant domain (default: active CLI tenant)
-  --audience URI      API identifier / oauth2c --audience (default: https://oauth2c.local)
-  --callback URL      Browser callback (default: http://localhost:9876/callback)
-  --email ADDRESS     Demo user email for the password grant
+  --tenant DOMAIN     Auth0 tenant domain, e.g. <tenant>.us.auth0.com (default: active CLI tenant)
+  --audience URI      API identifier / oauth2c --audience (default: ${AUDIENCE})
+  --callback URL      Browser callback (default: ${CALLBACK})
+  --email ADDRESS     Demo user email (default: ${EMAIL})
   --env-file PATH     Where to write secrets (default: .env.auth0, gitignored)
-  --prefix NAME       Resource name prefix (default: oauth2c)
+  --prefix NAME       Resource name prefix (default: ${PREFIX})
   -h, --help          Show this help
 
-The script writes client IDs and secrets to --env-file. Do not commit that file.
+Creates (or updates) an API, demo apps, and a database user at ${EMAIL}.
+The script writes client IDs, secrets, and that user's password to --env-file.
+Do not commit that file.
 EOF
 }
 
@@ -45,7 +49,7 @@ while [[ $# -gt 0 ]]; do
     --tenant) TENANT="$2"; shift 2 ;;
     --audience) AUDIENCE="$2"; shift 2 ;;
     --callback) CALLBACK="$2"; shift 2 ;;
-    --email) EMAIL="$2"; shift 2 ;;
+    --email) EMAIL="$2"; EMAIL_SET=1; shift 2 ;;
     --env-file) ENV_FILE="$2"; shift 2 ;;
     --prefix) PREFIX="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -329,15 +333,25 @@ print(json.dumps({"default_directory":sys.argv[1]}))
   fi
 }
 
-existing_password=""
-if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  existing_password="$(python3 -c '
+env_get() {
+  python3 -c '
 import re,sys
 text=open(sys.argv[1]).read()
-m=re.search(r"^OAUTH2C_PASSWORD=(.*)$", text, re.M)
+m=re.search(r"^" + re.escape(sys.argv[2]) + r"=(.*)$", text, re.M)
 print(m.group(1).strip().strip("\"'\''") if m else "")
-' "$ENV_FILE")"
+' "$1" "$2"
+}
+
+existing_password=""
+existing_email=""
+if [[ -f "$ENV_FILE" ]]; then
+  existing_password="$(env_get "$ENV_FILE" OAUTH2C_PASSWORD)"
+  existing_email="$(env_get "$ENV_FILE" OAUTH2C_USERNAME)"
+fi
+
+# Keep a previously provisioned demo email unless the caller passed --email.
+if [[ "$EMAIL_SET" -eq 0 && -n "$existing_email" ]]; then
+  EMAIL="$existing_email"
 fi
 
 PASSWORD="${existing_password:-}"
@@ -433,6 +447,7 @@ OAUTH2C_POST_CLIENT_SECRET=${POST_SECRET}
 OAUTH2C_SPA_CLIENT_ID=${SPA_ID}
 OAUTH2C_DEVICE_CLIENT_ID=${DEVICE_ID}
 
+# Database user for Universal Login and the password grant
 OAUTH2C_USERNAME=${EMAIL}
 OAUTH2C_PASSWORD=${PASSWORD}
 EOF
@@ -440,6 +455,10 @@ EOF
 echo
 echo "Wrote ${ENV_FILE}"
 echo "Load it with:  set -a && source ${ENV_FILE} && set +a"
+echo
+echo "Demo user (Universal Login and password grant):"
+echo "  email     ${EMAIL}"
+echo "  password  \$OAUTH2C_PASSWORD  (in ${ENV_FILE})"
 echo
 echo "Smoke-test client credentials:"
 echo "  oauth2c \"\$OAUTH2C_ISSUER\" --grant-type client_credentials --auth-method client_secret_basic \\"

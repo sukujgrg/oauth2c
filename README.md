@@ -57,14 +57,20 @@ Then provision the demo apps with the
 ```sh
 brew install auth0
 auth0 login
-auth0 tenants use <your-tenant>.auth0.com
-./scripts/setup-auth0.sh
+auth0 tenants use <your-tenant>.us.auth0.com   # or .eu.auth0.com / .au.auth0.com
+./scripts/setup-auth0.sh   # or: make auth0-setup
 set -a && source .env.auth0 && set +a
 ```
 
 `scripts/setup-auth0.sh` is idempotent. It creates (or updates) an API, a
 confidential web app, an M2M app, a public SPA, a native device app, and a
-database user, then writes client IDs and secrets to `.env.auth0` (gitignored).
+database user (`oauth2c-demo@example.com` by default, override with `--email`),
+then writes client IDs, secrets, and that user's password to `.env.auth0`
+(gitignored). Browser login and the password grant use `$OAUTH2C_USERNAME` /
+`$OAUTH2C_PASSWORD`.
+
+`go test ./cmd` runs the non-browser grants against this tenant when
+`.env.auth0` is present, and skips them otherwise.
 
 Pass the issuer **without a trailing slash**. oauth2c appends
 `/.well-known/openid-configuration` to the value you give it.
@@ -153,7 +159,7 @@ For more information on the available options and arguments run
 
 ## Examples
 
-Load the variables from `scripts/setup-auth0.sh` first:
+Load `.env.auth0` (written by `./scripts/setup-auth0.sh` or `make auth0-setup`):
 
 ```sh
 set -a && source .env.auth0 && set +a
@@ -202,7 +208,7 @@ oauth2c "$OAUTH2C_ISSUER" \
   --response-mode form_post \
   --grant-type implicit \
   --audience "$OAUTH2C_AUDIENCE" \
-  --scopes openid,email,offline_access
+  --scopes openid,email
 ```
 
 [Learn more about implicit flow](https://auth0.com/docs/get-started/authentication-and-authorization-flow/implicit-flow-with-form-post)
@@ -320,12 +326,10 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 #### Device
 
-This grant type is a two-step process that allows a user to grant access to
-their data without having to enter a username and password. In the first step,
-the user grants permission for the client to access their data. In the second
-step, the client exchanges the authorization code received in the first step for
-an access token. This grant type is commonly used in server-side applications,
-such as when accessing a device from a TV or other non-interactive device.
+The device authorization grant is for clients that cannot host a browser, such
+as a TV or CLI. oauth2c asks the authorization server for a device code, prints
+a verification URL and user code, then polls the token endpoint until the user
+approves the request in a browser on another device.
 
 Auth0 device flow uses a public native application, so there is no client
 secret.
@@ -460,6 +464,7 @@ oauth2c "$OAUTH2C_ISSUER" \
   --client-id "$OAUTH2C_SPA_CLIENT_ID" \
   --grant-type authorization_code \
   --auth-method none \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid \
   --pkce \
   --nonce n-0S6_WzA2Mj
@@ -471,6 +476,7 @@ oauth2c "$OAUTH2C_ISSUER" \
   --grant-type implicit \
   --response-types id_token \
   --response-mode form_post \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid \
   --nonce n-0S6_WzA2Mj
 ```
@@ -507,6 +513,9 @@ When running behind a TLS-terminating proxy (e.g., nginx, Traefik, or a cloud
 load balancer), use `--callback-addr` to specify the local bind address while
 keeping the public HTTPS URL in `--redirect-url`.
 
+`scripts/setup-auth0.sh` only registers the localhost callbacks. Add the public
+URL to the Auth0 application's Allowed Callback URLs before running this.
+
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
   --client-id "$OAUTH2C_WEB_CLIENT_ID" \
@@ -538,6 +547,8 @@ oauth2c "$OAUTH2C_ISSUER" \
   --response-mode query \
   --grant-type authorization_code \
   --auth-method client_secret_basic \
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes openid,email,offline_access \
   --token-endpoint "$OAUTH2C_ISSUER/oauth/token" \
   --authorization-endpoint "$OAUTH2C_ISSUER/authorize"
 ```
@@ -589,7 +600,7 @@ oauth2c "$AS_ISSUER" \
   --client-secret "$AS_CLIENT_SECRET" \
   --grant-type client_credentials \
   --auth-method client_secret_jwt \
-  --scopes "$OAUTH2C_SCOPE"
+  --scopes email
 ```
 
 #### Private Key JWT
@@ -682,8 +693,9 @@ oauth2c "$AS_ISSUER" \
 
 #### DPoP
 
-Auth0 DPoP (when enabled on the API) accepts ES256 proofs. The sample key in
-this repo is PS256, which other authorization servers may accept.
+DPoP needs an authorization server that advertises it. The sample key in this
+repo is PS256. Auth0, when DPoP is enabled on an API, accepts ES256 proofs and
+will reject this key.
 
 ```sh
 oauth2c "$AS_ISSUER" \
