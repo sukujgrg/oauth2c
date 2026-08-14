@@ -3,18 +3,9 @@ package cmd
 import (
 	"bytes"
 	"encoding/json/v2"
+	"io"
 	"strings"
 	"testing"
-)
-
-const (
-	IssuerURL = "https://oauth2c.us.authz.cloudentity.io/oauth2c/demo"
-
-	ClientCredentialsScopes = "introspect_tokens,revoke_tokens"
-
-	TLSCertURL    = "../data/cert.pem"
-	TLSKeyURL     = "../data/key.pem"
-	SigningKeyURL = "../data/rsa/key.json"
 )
 
 type CommandTestCase struct {
@@ -33,14 +24,16 @@ func (tc *CommandTestCase) Test() func(*testing.T) {
 	return func(t *testing.T) {
 		deps := tc.GetDeps(t)
 
-		for i, arg := range tc.args {
+		args := append([]string(nil), tc.args...)
+		for i, arg := range args {
 			if strings.HasPrefix(arg, "$") {
-				tc.args[i] = deps[arg[1:]]
+				args[i] = deps[arg[1:]]
 			}
 		}
 
 		cmd := NewOAuth2Cmd("master", "none", "unknown")
-		cmd.SetArgs(tc.args)
+		cmd.SetArgs(args)
+		cmd.SetOut(io.Discard)
 		err := cmd.Execute()
 
 		if tc.err == nil {
@@ -53,14 +46,16 @@ func (tc *CommandTestCase) Test() func(*testing.T) {
 }
 
 func (tc *CommandTestCase) GetDeps(t *testing.T) map[string]string {
+	t.Helper()
 	deps := make(map[string]string)
 
 	for name, dep := range tc.deps {
 		output := bytes.Buffer{}
 		result := map[string]interface{}{}
 
+		args := append([]string(nil), dep.args...)
 		cmd := NewOAuth2Cmd("master", "none", "unknown")
-		cmd.SetArgs(dep.args)
+		cmd.SetArgs(args)
 		cmd.SetOut(&output)
 		err := cmd.Execute()
 

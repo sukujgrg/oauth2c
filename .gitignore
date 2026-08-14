@@ -17,3 +17,6 @@ oauth2c
 # vendor/
 
 dist/
+
+# Auth0 demo credentials written by scripts/setup-auth0.sh
+.env.auth0

@@ -45,6 +45,41 @@ You can also download a pre-built binary from the [releases page].
 
 [releases page]: https://github.com/sukujgrg/oauth2c/releases
 
+## Demo with Auth0
+
+**Prerequisite:** a free Auth0 tenant. Create one at
+[manage.auth0.com](https://manage.auth0.com/) (no paid plan is required for the
+core examples below).
+
+Then provision the demo apps with the
+[Auth0 CLI](https://auth0.com/docs/deploy-monitor/auth0-cli):
+
+```sh
+brew install auth0
+auth0 login
+auth0 tenants use <your-tenant>.us.auth0.com   # or .eu.auth0.com / .au.auth0.com
+./scripts/setup-auth0.sh   # or: make auth0-setup
+set -a && source .env.auth0 && set +a
+```
+
+`scripts/setup-auth0.sh` is idempotent. It creates (or updates) an API, a
+confidential web app, an M2M app, a public SPA, a native device app, and a
+database user (`oauth2c-demo@example.com` by default, override with `--email`),
+then writes client IDs, secrets, and that user's password to `.env.auth0`
+(gitignored). Browser login and the password grant use `$OAUTH2C_USERNAME` /
+`$OAUTH2C_PASSWORD`.
+
+`go test ./cmd` runs the non-browser grants against this tenant when
+`.env.auth0` is present, and skips them otherwise.
+
+Pass the issuer **without a trailing slash**. oauth2c appends
+`/.well-known/openid-configuration` to the value you give it.
+
+A free Auth0 tenant covers the core grants in this README. Advanced profiles
+(JARM, PAR, RAR, private_key_jwt, mTLS, JWT bearer) need another authorization
+server or Auth0 Enterprise / Highly Regulated Identity; see
+[Advanced profiles](#advanced-profiles).
+
 ## Usage
 
 ```sh
@@ -124,8 +159,11 @@ For more information on the available options and arguments run
 
 ## Examples
 
-Here are a few examples of using oauth2c with different grant types and client
-authentication methods:
+Load `.env.auth0` (written by `./scripts/setup-auth0.sh` or `make auth0-setup`):
+
+```sh
+set -a && source .env.auth0 && set +a
+```
 
 ### Grant types
 
@@ -140,16 +178,18 @@ code for an access token. This grant type is typically used in server-side
 applications.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
   --response-types code \
   --response-mode query \
   --grant-type authorization_code \
-  --auth-method client_secret_basic
+  --auth-method client_secret_basic \
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes openid,email,offline_access
 ```
 
-[Learn more about authorization code flow](https://cloudentity.com/developers/basics/oauth-grant-types/authorization-code-flow/)
+[Learn more about authorization code flow](https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow)
 
 #### Implicit
 
@@ -162,15 +202,16 @@ This grant type is typically used in single-page or mobile applications.
 > with PKCE (Proof Key for Code Exchange) for added security.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_SPA_CLIENT_ID" \
   --response-types token \
   --response-mode form_post \
   --grant-type implicit \
-  --scopes openid,email,offline_access
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes openid,email
 ```
 
-[Learn more about implicit flow](https://cloudentity.com/developers/basics/oauth-grant-types/implicit-flow/)
+[Learn more about implicit flow](https://auth0.com/docs/get-started/authentication-and-authorization-flow/implicit-flow-with-form-post)
 
 #### Hybrid
 
@@ -190,17 +231,18 @@ typically signed by the OAuth2 provider, so the client can verify its
 authenticity using the provider's public key.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
   --response-types code,id_token \
   --response-mode form_post \
   --grant-type authorization_code \
   --auth-method client_secret_basic \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid,email,offline_access
 ```
 
-[Learn more about the hybrid flow](https://cloudentity.com/developers/basics/oauth-grant-types/hybrid-flow/)
+[Learn more about the hybrid flow](https://auth0.com/docs/get-started/authentication-and-authorization-flow/hybrid-flow)
 
 #### Client credentials
 
@@ -209,29 +251,33 @@ server, which then returns an access token. This grant type is typically used
 for server-to-server communication, where the client is a trusted server rather
 than a user.
 
+Auth0 client-credentials requests need `--audience` set to the API identifier
+created by `scripts/setup-auth0.sh`.
+
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
   --grant-type client_credentials \
   --auth-method client_secret_basic \
-  --scopes introspect_tokens,revoke_tokens
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes "$OAUTH2C_SCOPE"
 ```
 
-[Learn more about the client credentials flow](https://cloudentity.com/developers/basics/oauth-grant-types/client-credentials-flow/)
+[Learn more about the client credentials flow](https://auth0.com/docs/get-started/authentication-and-authorization-flow/client-credentials-flow)
 
-### Refresh token
+#### Refresh token
 
 This grant type involves the client providing a refresh token to the OAuth2
 server, which then returns a new access token.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --grant-type refresh_token\
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
+  --grant-type refresh_token \
   --auth-method client_secret_basic \
-  --refresh-token $REFRESH_TOKEN
+  --refresh-token "$REFRESH_TOKEN"
 ```
 
 > **Note** In order to use this command, you must first set the REFRESH_TOKEN
@@ -241,20 +287,21 @@ oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
 > <summary>Show example</summary>
 >
 > ```sh
-> export REFRESH_TOKEN=`oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
->   --client-id cauktionbud6q8ftlqq0 \
->   --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+> export REFRESH_TOKEN=`oauth2c "$OAUTH2C_ISSUER" \
+>   --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+>   --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
 >   --response-types code \
 >   --response-mode query \
 >   --grant-type authorization_code \
 >   --auth-method client_secret_basic \
+>   --audience "$OAUTH2C_AUDIENCE" \
 >   --scopes openid,email,offline_access \
 >   --silent | jq -r .refresh_token`
 > ```
 >
 > </details>
 
-[Learn more about the refresh token flow](https://cloudentity.com/developers/basics/oauth-grant-types/refresh-token-flow/)
+[Learn more about the refresh token flow](https://auth0.com/docs/secure/tokens/refresh-tokens/use-refresh-tokens)
 
 #### Password
 
@@ -264,108 +311,42 @@ only be used in secure environments, as it involves sending the user's
 credentials to the OAuth2 server.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
   --grant-type password \
-  --username demo \
-  --password demo \
+  --username "$OAUTH2C_USERNAME" \
+  --password "$OAUTH2C_PASSWORD" \
   --auth-method client_secret_basic \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid
 ```
 
-[Learn more about the password flow](https://cloudentity.com/developers/basics/oauth-grant-types/resource-owner-password-credentials/)
+[Learn more about the password flow](https://auth0.com/docs/get-started/authentication-and-authorization-flow/resource-owner-password-flow)
 
 #### Device
 
-This grant type is a two-step process that allows a user to grant access to
-their data without having to enter a username and password. In the first step,
-the user grants permission for the client to access their data. In the second
-step, the client exchanges the authorization code received in the first step for
-an access token. This grant type is commonly used in server-side applications,
-such as when accessing a device from a TV or other non-interactive device.
+The device authorization grant is for clients that cannot host a browser, such
+as a TV or CLI. oauth2c asks the authorization server for a device code, prints
+a verification URL and user code, then polls the token endpoint until the user
+approves the request in a browser on another device.
+
+Auth0 device flow uses a public native application, so there is no client
+secret.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_DEVICE_CLIENT_ID" \
   --grant-type urn:ietf:params:oauth:grant-type:device_code \
-  --auth-method client_secret_basic \
+  --auth-method none \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid,email,offline_access
 ```
 
-[Learn more about the device flow](https://cloudentity.com/developers/basics/oauth-grant-types/device/)
+[Learn more about the device flow](https://auth0.com/docs/get-started/authentication-and-authorization-flow/device-authorization-flow)
 
-#### JWT Bearer
-
-This grant type involves the client providing a JSON Web Token (JWT) to the
-OAuth2 server, which then returns an access token. This grant type is typically
-used when the client is a trusted third-party, such as a JWT issuer.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --grant-type urn:ietf:params:oauth:grant-type:jwt-bearer \
-  --auth-method client_secret_basic \
-  --scopes email \
-  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json \
-  --assertion '{"sub":"jdoe@example.com"}'
-```
-
-[Learn more about the jwt bearer flow](https://cloudentity.com/developers/basics/oauth-grant-types/using-jwt-profile-for-authorization-flows/)
-
-#### Token exchange
-
-The token exchange OAuth2 grant flow involves the client providing an access
-token to the OAuth2 server, which then returns a new access token. This grant
-type is typically used when the client and the OAuth2 server have a pre-existing
-trust relationship, such as when the client is a trusted third-party.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --grant-type urn:ietf:params:oauth:grant-type:token-exchange \
-  --auth-method client_secret_basic \
-  --scopes email \
-  --subject-token $SUBJECT_TOKEN \
-  --subject-token-type urn:ietf:params:oauth:token-type:access_token \
-  --actor-token $ACTOR_TOKEN \
-  --actor-token-type urn:ietf:params:oauth:token-type:access_token
-```
-
-> **Note** In order to use this command, you must first set the SUBJECT_TOKEN
-> and ACTOR_TOKEN environment variables
->
-> <details>
-> <summary>Show example</summary>
->
-> ```sh
-> export SUBJECT_TOKEN=`oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
->   --client-id cauktionbud6q8ftlqq0 \
->   --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
->   --response-types code \
->   --response-mode query \
->   --grant-type authorization_code \
->   --auth-method client_secret_basic \
->   --scopes openid,email,offline_access \
->   --silent | jq -r .access_token`
-> ```
->
-> ```sh
-> export ACTOR_TOKEN=`oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
->   --client-id cauktionbud6q8ftlqq0 \
->   --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
->   --grant-type client_credentials \
->   --auth-method client_secret_basic \
->   --scopes introspect_tokens,revoke_tokens \
->   --silent | jq -r .access_token`
-> ```
->
-> </details>
-
-[Learn more about the token exchange flow](https://cloudentity.com/developers/basics/oauth-grant-types/token-exchange/)
+JWT bearer and token exchange are implemented by oauth2c but are not part of
+the free Auth0 demo. See [Advanced profiles](#advanced-profiles).
 
 ### Auth methods
 
@@ -377,15 +358,16 @@ server. This method is simple and widely supported, but it is less secure than
 other methods because the client secret is sent in the clear.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
   --grant-type client_credentials \
   --auth-method client_secret_basic \
-  --scopes introspect_tokens,revoke_tokens
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes "$OAUTH2C_SCOPE"
 ```
 
-[Learn more about client secret basic](https://cloudentity.com/developers/basics/oauth-client-authentication/client-secret-authentication/#process-of-authentication-with-client_secret_basic)
+[Learn more about client secret basic](https://auth0.com/docs/get-started/authentication-and-authorization-flow/call-your-api-using-the-client-credentials-flow)
 
 #### Client Secret Post
 
@@ -396,72 +378,21 @@ request to be sent via HTTPS to prevent the client secret from being
 intercepted.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauosoo2omc4fr8ai1fg \
-  --client-secret ipFkA1lMomOMI_d2HcGGQ7j8oxeHFqKw3kli76g92VM \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_POST_CLIENT_ID" \
+  --client-secret "$OAUTH2C_POST_CLIENT_SECRET" \
   --grant-type client_credentials \
   --auth-method client_secret_post \
-  --scopes introspect_tokens,revoke_tokens
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes "$OAUTH2C_SCOPE"
 ```
 
-[Learn more about client secret post](https://cloudentity.com/developers/basics/oauth-client-authentication/client-secret-authentication/#process-of-authentication-with-client_secret_post)
+[Learn more about client secret post](https://auth0.com/docs/get-started/authentication-and-authorization-flow/call-your-api-using-the-client-credentials-flow)
 
-#### Client Secret JWT
-
-This client authentication method involves the client signing a JSON Web Token
-(JWT) using its client secret, and then sending the JWT to the OAuth2 server.
-This method provides a higher level of security than the basic or post methods,
-as the client secret is never sent in the clear.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id ab966ce4f2ac4f4aa641582b099c32d3 \
-  --client-secret 578-WfFYfBheWb8gJpHYXMRRqR5HN0qv7d7xIolJnIE \
-  --grant-type client_credentials \
-  --auth-method client_secret_jwt \
-  --scopes introspect_tokens,revoke_tokens
-```
-
-[Learn more about client secret jwt](https://cloudentity.com/developers/basics/oauth-client-authentication/client-secret-authentication/#process-of-authentication-with-client_secret_jwt)
-
-#### Private Key JWT
-
-This client authentication method involves the client signing a JSON Web Token
-(JWT) using its private key, and then sending the JWT to the OAuth2 server. This
-method provides a higher level of security than the JWT methods using a client
-secret, as the private key is never shared with the OAuth2 server.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id 582af0afb0d74554aa7af47849edb222 \
-  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json \
-  --grant-type client_credentials \
-  --auth-method private_key_jwt \
-  --scopes introspect_tokens,revoke_tokens
-```
-
-[Learn more about private key jwt](https://cloudentity.com/developers/basics/oauth-client-authentication/private-key-jwt-client-authentication/)
-
-#### TLS Client Auth
-
-This client authentication method involves the client providing its own
-certificate as part of the TLS handshake when connecting to the OAuth2 server.
-This method provides a high level of security, as the client's identity is
-verified using a trusted certificate authority. However, it requires the OAuth2
-server to support TLS client authentication, which may not be supported by all
-OAuth2 providers.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id 3f07a8c2adea4c1ab353f3ca8e16b8fd \
-  --tls-cert https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/cert.pem \
-  --tls-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/key.pem \
-  --grant-type client_credentials \
-  --auth-method tls_client_auth \
-  --scopes introspect_tokens,revoke_tokens
-```
-
-[Learn more about tls client auth](https://cloudentity.com/developers/basics/oauth-client-authentication/oauth-mtls-client-authentication/)
+`client_secret_jwt`, `private_key_jwt`, and `tls_client_auth` are implemented
+by oauth2c. Auth0 advertises the latter two on discovery but they require
+Enterprise / Highly Regulated Identity. See
+[Advanced profiles](#advanced-profiles).
 
 #### None with PKCE
 
@@ -475,55 +406,20 @@ can only be exchanged for a token by the same client that initially requested
 it. This helps prevent unauthorized access to the token.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id db5e375e7b634095b24bbb683fcb955b \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_SPA_CLIENT_ID" \
   --response-types code \
   --response-mode query \
   --grant-type authorization_code \
   --auth-method none \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid,email \
   --pkce
 ```
 
-[Lean more about none with PKCE](https://cloudentity.com/developers/basics/oauth-client-authentication/client-auth-set-to-none-with-pkce/)
+[Learn more about authorization code flow with PKCE](https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow-with-pkce)
 
 ### Extensions
-
-#### Request Object
-
-The Request Object is a JWT that contains the parameters of an authorization
-request. It allows the request to be passed along as a single, self-contained
-parameter, and it can be optionally signed and/or encrypted for added security.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --response-types code \
-  --response-mode query \
-  --grant-type authorization_code \
-  --auth-method client_secret_basic \
-  --scopes openid,email,offline_access \
-  --request-object
-```
-
-#### Request claims
-
-Requesting Claims using the "claims" Request Parameter enables clients to
-request specific user attributes in an authorization, enhancing efficiency and
-security.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --response-types code \
-  --response-mode query \
-  --grant-type authorization_code \
-  --auth-method client_secret_basic \
-  --scopes openid,offline_access \
-  --claims '{"id_token":{"email": {"essential": true}}}'
-```
 
 #### PKCE
 
@@ -542,17 +438,18 @@ for all public clients, such as single-page or mobile applications, where the
 client secret cannot be securely stored.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id db5e375e7b634095b24bbb683fcb955b \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_SPA_CLIENT_ID" \
   --response-types code \
   --response-mode query \
   --grant-type authorization_code \
   --auth-method none \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid,email \
   --pkce
 ```
 
-[Learn more about authorization code flow with pkce](https://cloudentity.com/developers/basics/oauth-grant-types/authorization-code-with-pkce/)
+[Learn more about authorization code flow with PKCE](https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow-with-pkce)
 
 #### Nonce
 
@@ -563,146 +460,30 @@ Token is returned, oauth2c verifies its signature and `iss`, `aud`, `exp`, and
 `iat` claims, then fails when the `nonce` claim is missing or does not match.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id db5e375e7b634095b24bbb683fcb955b \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_SPA_CLIENT_ID" \
   --grant-type authorization_code \
   --auth-method none \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid \
   --pkce \
   --nonce n-0S6_WzA2Mj
 ```
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id db5e375e7b634095b24bbb683fcb955b \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_SPA_CLIENT_ID" \
   --grant-type implicit \
   --response-types id_token \
   --response-mode form_post \
+  --audience "$OAUTH2C_AUDIENCE" \
   --scopes openid \
   --nonce n-0S6_WzA2Mj
 ```
 
-#### JARM
-
-JWT-secured OAuth 2.0 authorization response, also known as JARM, is a method of
-securely transmitting authorization information in an OAuth 2.0 authorization
-response using JSON Web Tokens (JWT). This allows the authorization response to
-be verified by the client, ensuring that the information is coming from a
-trusted source and has not been tampered with. The JWT is signed using a secret
-key shared between the authorization server and the client, allowing the client
-to verify the authenticity of the JWT. This provides an additional layer of
-security to the OAuth 2.0 authorization process.
-
-**Signed JWT**
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --response-types code \
-  --response-mode query.jwt \
-  --grant-type authorization_code \
-  --auth-method client_secret_basic \
-  --scopes openid,email,offline_access
-```
-
-**Signed and encrypted JWT**
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauosoo2omc4fr8ai1fg \
-  --client-secret ipFkA1lMomOMI_d2HcGGQ7j8oxeHFqKw3kli76g92VM \
-  --response-types code \
-  --response-mode query.jwt \
-  --grant-type authorization_code \
-  --auth-method client_secret_post \
-  --scopes openid,email,offline_access \
-  --encryption-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json
-```
-
-#### PAR
-
-Pushed Authorization Requests (PAR) is an extension of the OAuth 2.0
-specification that enables client applications to push the payloads of
-authorization requests directly to the authorization server via a PAR endpoint.
-This allows for more efficient and secure handling of authorization requests.
-PAR can be useful for client applications that require a high level of security,
-and may be required for compliance with certain security profiles and
-regulations.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --response-types code \
-  --response-mode query \
-  --grant-type authorization_code \
-  --auth-method client_secret_basic \
-  --scopes openid,email,offline_access \
-  --par
-```
-
-[Learn more about PAR](https://cloudentity.com/developers/basics/oauth-grant-types/pushed-authorization-requests/)
-
-#### DPoP
-
-DPoP, or Demonstration of Proof of Possession, is an extension that describes a
-technique to cryptographically bind access tokens to a particular client when
-they are issued. This is one of many attempts at improving the security of
-Bearer Tokens by requiring the application using the token to authenticate
-itself.
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --response-types code \
-  --response-mode query \
-  --grant-type authorization_code \
-  --auth-method client_secret_basic \
-  --scopes openid,email,offline_access \
-  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/ps/key.json \
-  --dpop
-```
-
-#### RAR
-
-[Rich Authorization Request (RAR)](https://datatracker.ietf.org/doc/html/rfc9396)
-introduces a new parameter `authorization_details` that allows clients to
-specify their fine-grained authorization requirements using the expressiveness
-of JSON data structures. For example, an authorization request for a credit
-transfer (designated as "payment initiation" in several open banking
-initiatives) can be represented using a JSON object like this:
-
-```
-{
-   "type": "payment_initiation",
-   "locations": [
-      "https://example.com/payments"
-   ],
-   "instructedAmount": {
-      "currency": "EUR",
-      "amount": "123.50"
-   },
-   "creditorName": "Merchant A",
-   "creditorAccount": {
-      "bic":"ABCIDEFFXXX",
-      "iban": "DE02100100109307118603"
-   },
-   "remittanceInformationUnstructured": "Ref Number Merchant"
-}
-```
-
-```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
-  --response-types code \
-  --response-mode query \
-  --grant-type authorization_code \
-  --auth-method client_secret_basic \
-  --rar '[{"type":"payment_initiation","locations":["https://example.com/payments"],"instructedAmount":{"currency":"EUR","amount":"123.50"},"creditorName":"Merchant A","creditorAccount":{"bic":"ABCIDEFFXXX","iban":"DE02100100109307118603"},"remittanceInformationUnstructured":"Ref Number Merchant"}]'
-```
+Request objects, JARM, PAR, DPoP, and RAR are implemented by oauth2c but are
+not enabled on a free Auth0 tenant. See
+[Advanced profiles](#advanced-profiles).
 
 ### Miscellaneous
 
@@ -712,13 +493,15 @@ You can use `--callback-tls-cert` and `--callback-tls-key` flags to specify a
 TLS certificate and key for the HTTPs callback redirect URL.
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
   --response-types code \
   --response-mode query \
   --grant-type authorization_code \
   --auth-method client_secret_basic \
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes openid,email,offline_access \
   --redirect-url https://localhost:9876/callback \
   --callback-tls-cert https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/cert.pem \
   --callback-tls-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/key.pem
@@ -730,14 +513,19 @@ When running behind a TLS-terminating proxy (e.g., nginx, Traefik, or a cloud
 load balancer), use `--callback-addr` to specify the local bind address while
 keeping the public HTTPS URL in `--redirect-url`.
 
+`scripts/setup-auth0.sh` only registers the localhost callbacks. Add the public
+URL to the Auth0 application's Allowed Callback URLs before running this.
+
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
   --response-types code \
   --response-mode query \
   --grant-type authorization_code \
   --auth-method client_secret_basic \
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes openid,email,offline_access \
   --redirect-url https://example.com/callback \
   --callback-addr 0.0.0.0:8080
 ```
@@ -752,15 +540,187 @@ In this configuration:
 If your authorization server does not support OIDC, you can specify the endpoint manually using flags. 
 
 ```sh
-oauth2c https://oauth2c.us.authz.cloudentity.io/oauth2c/demo \
-  --client-id cauktionbud6q8ftlqq0 \
-  --client-secret HCwQ5uuUWBRHd04ivjX5Kl0Rz8zxMOekeLtqzki0GPc \
+oauth2c "$OAUTH2C_ISSUER" \
+  --client-id "$OAUTH2C_WEB_CLIENT_ID" \
+  --client-secret "$OAUTH2C_WEB_CLIENT_SECRET" \
   --response-types code \
   --response-mode query \
   --grant-type authorization_code \
   --auth-method client_secret_basic \
-  --token-endpoint https://oauth2c.us.authz.cloudentity.io/oauth2c/demo/oauth2/token \
-  --authorization-endpoint https://oauth2c.us.authz.cloudentity.io/oauth2c/demo/oauth2/authorize
+  --audience "$OAUTH2C_AUDIENCE" \
+  --scopes openid,email,offline_access \
+  --token-endpoint "$OAUTH2C_ISSUER/oauth/token" \
+  --authorization-endpoint "$OAUTH2C_ISSUER/authorize"
+```
+
+## Advanced profiles
+
+oauth2c still implements these flows. They are omitted from
+`scripts/setup-auth0.sh` because a free Auth0 tenant does not expose them
+(or exposes a different profile than the one oauth2c demos). Use an
+authorization server that supports the relevant spec — for example Cloudentity,
+Keycloak, or Auth0 Enterprise with the Highly Regulated Identity add-on.
+
+Replace `$AS_ISSUER` / `$AS_CLIENT_ID` / `$AS_CLIENT_SECRET` with values from
+that server.
+
+#### JWT Bearer
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --grant-type urn:ietf:params:oauth:grant-type:jwt-bearer \
+  --auth-method client_secret_basic \
+  --scopes email \
+  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json \
+  --assertion '{"sub":"jdoe@example.com"}'
+```
+
+#### Token exchange
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --grant-type urn:ietf:params:oauth:grant-type:token-exchange \
+  --auth-method client_secret_basic \
+  --scopes email \
+  --subject-token "$SUBJECT_TOKEN" \
+  --subject-token-type urn:ietf:params:oauth:token-type:access_token \
+  --actor-token "$ACTOR_TOKEN" \
+  --actor-token-type urn:ietf:params:oauth:token-type:access_token
+```
+
+#### Client Secret JWT
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --grant-type client_credentials \
+  --auth-method client_secret_jwt \
+  --scopes email
+```
+
+#### Private Key JWT
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json \
+  --grant-type client_credentials \
+  --auth-method private_key_jwt
+```
+
+#### TLS Client Auth
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --tls-cert https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/cert.pem \
+  --tls-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/key.pem \
+  --grant-type client_credentials \
+  --auth-method tls_client_auth
+```
+
+#### Request Object
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --response-types code \
+  --response-mode query \
+  --grant-type authorization_code \
+  --auth-method client_secret_basic \
+  --scopes openid,email,offline_access \
+  --request-object
+```
+
+#### Request claims
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --response-types code \
+  --response-mode query \
+  --grant-type authorization_code \
+  --auth-method client_secret_basic \
+  --scopes openid,offline_access \
+  --claims '{"id_token":{"email": {"essential": true}}}'
+```
+
+#### JARM
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --response-types code \
+  --response-mode query.jwt \
+  --grant-type authorization_code \
+  --auth-method client_secret_basic \
+  --scopes openid,email,offline_access
+```
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --response-types code \
+  --response-mode query.jwt \
+  --grant-type authorization_code \
+  --auth-method client_secret_post \
+  --scopes openid,email,offline_access \
+  --encryption-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/rsa/key.json
+```
+
+#### PAR
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --response-types code \
+  --response-mode query \
+  --grant-type authorization_code \
+  --auth-method client_secret_basic \
+  --scopes openid,email,offline_access \
+  --par
+```
+
+#### DPoP
+
+DPoP needs an authorization server that advertises it. The sample key in this
+repo is PS256. Auth0, when DPoP is enabled on an API, accepts ES256 proofs and
+will reject this key.
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --response-types code \
+  --response-mode query \
+  --grant-type authorization_code \
+  --auth-method client_secret_basic \
+  --scopes openid,email,offline_access \
+  --signing-key https://raw.githubusercontent.com/sukujgrg/oauth2c/master/data/ps/key.json \
+  --dpop
+```
+
+#### RAR
+
+```sh
+oauth2c "$AS_ISSUER" \
+  --client-id "$AS_CLIENT_ID" \
+  --client-secret "$AS_CLIENT_SECRET" \
+  --response-types code \
+  --response-mode query \
+  --grant-type authorization_code \
+  --auth-method client_secret_basic \
+  --rar '[{"type":"payment_initiation","locations":["https://example.com/payments"],"instructedAmount":{"currency":"EUR","amount":"123.50"},"creditorName":"Merchant A","creditorAccount":{"bic":"ABCIDEFFXXX","iban":"DE02100100109307118603"},"remittanceInformationUnstructured":"Ref Number Merchant"}]'
 ```
 
 ## License

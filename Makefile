@@ -13,3 +13,6 @@ lint:
 	golangci-lint run
 
 all: build test lint
+
+auth0-setup:
+	./scripts/setup-auth0.sh
