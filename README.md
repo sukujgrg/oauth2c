@@ -52,13 +52,13 @@ You can also download a pre-built binary from the [releases page].
 core examples below).
 
 Then provision the demo apps with the
-[Auth0 CLI](https://auth0.com/docs/deploy-monitor/auth0-cli):
+[Auth0 CLI](https://auth0.com/docs/deploy-monitor/auth0-cli)
+(`brew install auth0` or the installer for your OS):
 
 ```sh
-brew install auth0
 auth0 login
 auth0 tenants use <your-tenant>.us.auth0.com   # or .eu.auth0.com / .au.auth0.com
-./scripts/setup-auth0.sh   # or: make auth0-setup
+./scripts/setup-auth0.sh
 set -a && source .env.auth0 && set +a
 ```
 
@@ -69,16 +69,11 @@ then writes client IDs, secrets, and that user's password to `.env.auth0`
 (gitignored). Browser login and the password grant use `$OAUTH2C_USERNAME` /
 `$OAUTH2C_PASSWORD`.
 
-`go test ./cmd` runs the non-browser grants against this tenant when
-`.env.auth0` is present, and skips them otherwise.
-
 Pass the issuer **without a trailing slash**. oauth2c appends
 `/.well-known/openid-configuration` to the value you give it.
 
-A free Auth0 tenant covers the core grants in this README. Advanced profiles
-(JARM, PAR, RAR, private_key_jwt, mTLS, JWT bearer) need another authorization
-server or Auth0 Enterprise / Highly Regulated Identity; see
-[Advanced profiles](#advanced-profiles).
+A free Auth0 tenant covers the core grants in this README. Flows that need
+another authorization server are in [Advanced profiles](#advanced-profiles).
 
 ## Usage
 
@@ -154,16 +149,15 @@ HTTP server which acts as a client application and waits for a callback.
 `oauth2c` prints all the requests it made to obtain an access token. If you want
 to integrate it with CI/CD pipeline use the `--silent` flag.
 
-For more information on the available options and arguments run
-`oauth2c --help`.
-
 ## Examples
 
-Load `.env.auth0` (written by `./scripts/setup-auth0.sh` or `make auth0-setup`):
+Load `.env.auth0` (written by `./scripts/setup-auth0.sh`):
 
 ```sh
 set -a && source .env.auth0 && set +a
 ```
+
+Auth0 access tokens for the demo API need `--audience "$OAUTH2C_AUDIENCE"`.
 
 ### Grant types
 
@@ -172,10 +166,8 @@ set -a && source .env.auth0 && set +a
 
 #### Authorization code
 
-This grant type involves a two-step process where the user first grants
-permission to access their data, and then the client exchanges the authorization
-code for an access token. This grant type is typically used in server-side
-applications.
+The client receives an authorization code in the browser callback and exchanges
+it for tokens. Typical for confidential server-side apps.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -193,13 +185,8 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 #### Implicit
 
-This grant type is similar to the authorization code grant, but the access token
-is returned directly to the client without an intermediate authorization code.
-This grant type is typically used in single-page or mobile applications.
-
-> **Note**: The implicit flow is not recommended for use in modern OAuth2
-> applications. Instead, it is recommended to use the authorization code flow
-> with PKCE (Proof Key for Code Exchange) for added security.
+Tokens are returned to the browser without a code exchange. Prefer authorization
+code with PKCE for new apps.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -215,20 +202,8 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 #### Hybrid
 
-To use the OAuth2 hybrid flow to obtain an authorization code and an ID token,
-the client first sends an authorization request to the OAuth2 provider. The
-request should include the code and id_token response types.
-
-The OAuth2 provider will then return an authorization code and an ID token to
-the client, either in the response body or as fragment parameters in the
-redirect URL, depending on the response mode specified in the request. The
-client can then use the authorization code to obtain an access token by sending
-a token request to the OAuth2 provider.
-
-The ID token can be used to verify the identity of the authenticated user, as it
-contains information such as the user's name and email address. The ID token is
-typically signed by the OAuth2 provider, so the client can verify its
-authenticity using the provider's public key.
+The authorization response includes both a code and an ID token
+(`response_types code,id_token`).
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -246,13 +221,8 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 #### Client credentials
 
-This grant type involves the client providing its own credentials to the OAuth2
-server, which then returns an access token. This grant type is typically used
-for server-to-server communication, where the client is a trusted server rather
-than a user.
-
-Auth0 client-credentials requests need `--audience` set to the API identifier
-created by `scripts/setup-auth0.sh`.
+The client authenticates as itself and receives an access token. Used for
+server-to-server calls.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -268,8 +238,7 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 #### Refresh token
 
-This grant type involves the client providing a refresh token to the OAuth2
-server, which then returns a new access token.
+Exchange a refresh token for a new access token.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -305,10 +274,8 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 #### Password
 
-This grant type involves the client providing the user's username and password
-to the OAuth2 server, which then returns an access token. This grant type should
-only be used in secure environments, as it involves sending the user's
-credentials to the OAuth2 server.
+The client sends the resource owner's username and password to the token
+endpoint.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -331,9 +298,6 @@ as a TV or CLI. oauth2c asks the authorization server for a device code, prints
 a verification URL and user code, then polls the token endpoint until the user
 approves the request in a browser on another device.
 
-Auth0 device flow uses a public native application, so there is no client
-secret.
-
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
   --client-id "$OAUTH2C_DEVICE_CLIENT_ID" \
@@ -345,17 +309,11 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 [Learn more about the device flow](https://auth0.com/docs/get-started/authentication-and-authorization-flow/device-authorization-flow)
 
-JWT bearer and token exchange are implemented by oauth2c but are not part of
-the free Auth0 demo. See [Advanced profiles](#advanced-profiles).
-
 ### Auth methods
 
 #### Client Secret Basic
 
-This client authentication method involves the client sending its credentials as
-part of the HTTP Basic authentication header in the request to the OAuth2
-server. This method is simple and widely supported, but it is less secure than
-other methods because the client secret is sent in the clear.
+The client authenticates with an HTTP Basic `Authorization` header.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -371,11 +329,7 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 #### Client Secret Post
 
-This client authentication method involves the client sending its credentials as
-part of the request body in the request to the OAuth2 server. This method
-provides more security than the basic authentication method, but it requires the
-request to be sent via HTTPS to prevent the client secret from being
-intercepted.
+The client sends `client_id` and `client_secret` in the token request body.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -389,21 +343,10 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 [Learn more about client secret post](https://auth0.com/docs/get-started/authentication-and-authorization-flow/call-your-api-using-the-client-credentials-flow)
 
-`client_secret_jwt`, `private_key_jwt`, and `tls_client_auth` are implemented
-by oauth2c. Auth0 advertises the latter two on discovery but they require
-Enterprise / Highly Regulated Identity. See
-[Advanced profiles](#advanced-profiles).
-
 #### None with PKCE
 
-Public clients, such as mobile apps, are unable to authenticate themselves to
-the authorization server in the same way that confidential clients can because
-they do not have a client secret. To protect themselves from having their
-authorization codes intercepted and used by attackers, public clients can use
-PKCE (Proof Key for Code Exchange) during the authorization process. PKCE
-provides an additional layer of security by ensuring that the authorization code
-can only be exchanged for a token by the same client that initially requested
-it. This helps prevent unauthorized access to the token.
+Public clients have no secret. PKCE binds the authorization code to the client
+that started the request.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -420,36 +363,6 @@ oauth2c "$OAUTH2C_ISSUER" \
 [Learn more about authorization code flow with PKCE](https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow-with-pkce)
 
 ### Extensions
-
-#### PKCE
-
-The Proof Key for Code Exchange (PKCE) is an extension to the OAuth2
-authorization code grant flow that provides additional security when
-authenticating with an OAuth2 provider. In the PKCE flow, the client generates a
-code verifier and a code challenge, which are then sent to the OAuth2 provider
-during the authorization request. The provider returns an authorization code,
-which the client then exchanges for an access token along with the code
-verifier. The provider verifies the code verifier to ensure that the request is
-coming from the same client that initiated the authorization request.
-
-This additional step helps to prevent attackers from intercepting the
-authorization code and using it to obtain an access token. PKCE is recommended
-for all public clients, such as single-page or mobile applications, where the
-client secret cannot be securely stored.
-
-```sh
-oauth2c "$OAUTH2C_ISSUER" \
-  --client-id "$OAUTH2C_SPA_CLIENT_ID" \
-  --response-types code \
-  --response-mode query \
-  --grant-type authorization_code \
-  --auth-method none \
-  --audience "$OAUTH2C_AUDIENCE" \
-  --scopes openid,email \
-  --pkce
-```
-
-[Learn more about authorization code flow with PKCE](https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow-with-pkce)
 
 #### Nonce
 
@@ -481,16 +394,12 @@ oauth2c "$OAUTH2C_ISSUER" \
   --nonce n-0S6_WzA2Mj
 ```
 
-Request objects, JARM, PAR, DPoP, and RAR are implemented by oauth2c but are
-not enabled on a free Auth0 tenant. See
-[Advanced profiles](#advanced-profiles).
-
 ### Miscellaneous
 
-#### Using HTTPs for Callback URL
+#### Using HTTPS for Callback URL
 
 You can use `--callback-tls-cert` and `--callback-tls-key` flags to specify a
-TLS certificate and key for the HTTPs callback redirect URL.
+TLS certificate and key for the HTTPS callback redirect URL.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -537,7 +446,7 @@ In this configuration:
 
 #### Specifying Authorization Server's Endpoint Manually
 
-If your authorization server does not support OIDC, you can specify the endpoint manually using flags. 
+If discovery is unavailable, set the endpoints with flags.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \
@@ -555,11 +464,8 @@ oauth2c "$OAUTH2C_ISSUER" \
 
 ## Advanced profiles
 
-oauth2c still implements these flows. They are omitted from
-`scripts/setup-auth0.sh` because a free Auth0 tenant does not expose them
-(or exposes a different profile than the one oauth2c demos). Use an
-authorization server that supports the relevant spec — for example Cloudentity,
-Keycloak, or Auth0 Enterprise with the Highly Regulated Identity add-on.
+These flows are implemented by oauth2c but are not part of the Auth0 demo.
+Use an authorization server that supports the relevant spec.
 
 Replace `$AS_ISSUER` / `$AS_CLIENT_ID` / `$AS_CLIENT_SECRET` with values from
 that server.
@@ -693,10 +599,6 @@ oauth2c "$AS_ISSUER" \
 
 #### DPoP
 
-DPoP needs an authorization server that advertises it. The sample key in this
-repo is PS256. Auth0, when DPoP is enabled on an API, accepts ES256 proofs and
-will reject this key.
-
 ```sh
 oauth2c "$AS_ISSUER" \
   --client-id "$AS_CLIENT_ID" \
@@ -732,3 +634,6 @@ oauth2c "$AS_ISSUER" \
 
 We welcome contributions! If you have an idea for a new feature or have found a
 bug, please open an issue on GitHub.
+
+`go test ./cmd` runs the non-browser grants against `.env.auth0` when that file
+is present, and skips them otherwise.

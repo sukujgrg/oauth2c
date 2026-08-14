@@ -4,7 +4,7 @@
 #
 # Prerequisites:
 #   A free Auth0 tenant (https://manage.auth0.com/)
-#   brew install auth0
+#   Install the Auth0 CLI (https://auth0.com/docs/deploy-monitor/auth0-cli)
 #   auth0 login
 #   auth0 tenants use <your-tenant>.us.auth0.com   # or .eu.auth0.com / .au.auth0.com
 #
