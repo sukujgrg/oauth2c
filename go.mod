@@ -7,6 +7,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
+	go.yaml.in/yaml/v4 v4.0.0-rc.6
 )
 
 require (

@@ -21,43 +21,50 @@ func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig,
 
 	if clientConfig.PAR {
 		if parRequest, parResponse, authorizeRequest, codeVerifier, err = oauth2.RequestPAR(context.Background(), clientConfig, serverConfig, hc); err != nil {
-			LogRequestAndResponseln(parRequest, err)
+			LogRequestAndResponse(parRequest, err)
 			return err
 		}
 
 		LogAssertion(parRequest, "client_assertion")
-		LogAuthMethod(clientConfig)
+		CheckMTLS(parRequest)
 		LogRequestObject(parRequest)
 		LogRequestAndResponse(parRequest, parResponse)
-		LogRequestln(authorizeRequest)
+		LogRequest(authorizeRequest)
 	} else {
 		if authorizeRequest, codeVerifier, err = oauth2.RequestAuthorization(clientConfig, serverConfig, hc); err != nil {
 			return err
 		}
 
 		LogRequestObject(authorizeRequest)
-		LogRequestln(authorizeRequest)
+		LogRequest(authorizeRequest)
 	}
 
 	LogPKCE(codeVerifier)
-	LogAuthURL(authorizeRequest.URL.String(), clientConfig.NoBrowser)
+	LogNonce(authorizeRequest)
+	if authorizeRequest.Nonce == "" {
+		LogNonce(parRequest)
+	}
+	LogURL("authorization_url", authorizeRequest.URL.String(), clientConfig.NoBrowser)
 
-	LogWaiting("callback")
+	LogWaiting("authorization_response")
 
-	if callbackRequest, err = oauth2.WaitForCallback(clientConfig, serverConfig, hc); err != nil {
-		LogRequestln(callbackRequest)
+	if callbackRequest, err = oauth2.WaitForCallback(clientConfig, serverConfig, hc, authorizeRequest.State); err != nil {
+		LogRequest(callbackRequest)
+		if callbackRequest.URL != nil {
+			_ = CheckState(authorizeRequest.State, callbackRequest.Get("state"))
+		}
 		return err
 	}
 
-	sentNonce := authorizeRequest.Nonce
-	if sentNonce == "" {
-		sentNonce = parRequest.Nonce
-	}
+	sentNonce, nonceSource := nonceSent(authorizeRequest, parRequest)
 
-	LogRequestln(callbackRequest)
+	LogRequest(callbackRequest)
 	LogJARM(callbackRequest)
+	if err = CheckState(authorizeRequest.State, callbackRequest.Get("state")); err != nil {
+		return err
+	}
 	if idToken := callbackRequest.Get("id_token"); idToken != "" {
-		if err = CheckNonce(sentNonce, idToken, clientConfig, serverConfig, hc); err != nil {
+		if err = CheckIDToken(sentNonce, nonceSource, idToken, clientConfig, serverConfig, hc); err != nil {
 			return err
 		}
 	}
@@ -71,14 +78,14 @@ func (c *OAuth2Cmd) AuthorizationCodeGrantFlow(clientConfig oauth2.ClientConfig,
 		oauth2.WithRedirectURL(clientConfig.RedirectURL),
 		oauth2.WithCodeVerifier(codeVerifier),
 	); err != nil {
-		LogRequestAndResponseln(tokenRequest, err)
+		LogRequestAndResponse(tokenRequest, err)
 		return err
 	}
 
-	LogAuthMethod(clientConfig)
+	CheckMTLS(tokenRequest)
 	LogRequestAndResponse(tokenRequest, tokenResponse)
-	LogTokenPayloadln(tokenResponse)
-	if err = CheckNonce(sentNonce, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
+	LogTokens(tokenResponse)
+	if err = CheckIDToken(sentNonce, nonceSource, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
 		return err
 	}
 

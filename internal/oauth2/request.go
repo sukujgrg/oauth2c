@@ -24,6 +24,25 @@ type Request struct {
 	EncryptionKey interface{}
 	Cert          *x509.Certificate
 	Nonce         string
+	NonceSource   string
+	State         string
+	UsedMTLSAlias bool
+}
+
+const (
+	NonceSourceGenerated = "generated"
+	NonceSourceCustom    = "custom"
+)
+
+func assignNonce(r *Request, cconfig ClientConfig) {
+	if cconfig.Nonce != "" {
+		r.Nonce = cconfig.Nonce
+		r.NonceSource = NonceSourceCustom
+		return
+	}
+
+	r.Nonce = uuid.NewString()
+	r.NonceSource = NonceSourceGenerated
 }
 
 func (r *Request) AuthorizeRequest(
@@ -31,17 +50,15 @@ func (r *Request) AuthorizeRequest(
 	sconfig ServerConfig,
 	hc *http.Client,
 ) (codeVerifier string, err error) {
-	nonce := cconfig.Nonce
-	if nonce == "" {
-		nonce = uuid.NewString()
-	}
+	assignNonce(r, cconfig)
 
-	r.Nonce = nonce
+	state := uuid.NewString()
+	r.State = state
 	r.Form = url.Values{
 		"client_id":    {cconfig.ClientID},
 		"redirect_uri": {cconfig.RedirectURL},
-		"state":        {uuid.NewString()},
-		"nonce":        {nonce},
+		"state":        {state},
+		"nonce":        {r.Nonce},
 	}
 
 	if len(cconfig.ResponseType) > 0 {
@@ -237,10 +254,15 @@ func (r *Request) AuthenticateClient(
 		r.Form.Set("client_id", cconfig.ClientID)
 	}
 
-	if tr, ok := hc.Transport.(*http.Transport); ok {
+	if tr, ok := hc.Transport.(*http.Transport); ok && tr.TLSClientConfig != nil {
 		if len(tr.TLSClientConfig.Certificates) > 0 {
 			r.Cert, _ = x509.ParseCertificate(tr.TLSClientConfig.Certificates[0].Certificate[0])
-			endpoint = mtlsEndpoint
+			// RFC 8705: use mtls_endpoint_aliases when advertised; otherwise
+			// keep the conventional endpoint.
+			if mtlsEndpoint != "" {
+				endpoint = mtlsEndpoint
+				r.UsedMTLSAlias = true
+			}
 		}
 	}
 
@@ -252,8 +274,10 @@ func (r *Request) Get(key string) string {
 		return v
 	}
 
-	if v := r.URL.Query().Get(key); v != "" {
-		return v
+	if r.URL != nil {
+		if v := r.URL.Query().Get(key); v != "" {
+			return v
+		}
 	}
 
 	return r.Form.Get(key)

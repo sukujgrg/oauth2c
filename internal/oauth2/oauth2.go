@@ -3,6 +3,7 @@ package oauth2
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json/jsontext"
@@ -209,20 +210,28 @@ func RequestPAR(
 
 	authorizeRequest.URL.RawQuery = values.Encode()
 	authorizeRequest.Method = http.MethodGet
+	authorizeRequest.State = parRequest.State
+	authorizeRequest.Nonce = parRequest.Nonce
+	authorizeRequest.NonceSource = parRequest.NonceSource
 
 	return parRequest, parResponse, authorizeRequest, codeVerifier, nil
 }
 
-func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *http.Client) (Request, error) {
+func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *http.Client, expectedState string) (Request, error) {
 	var (
 		redirectURL *url.URL
 		cert        tls.Certificate
 		done        = make(chan struct{})
 		mu          sync.Mutex
+		accepted    bool
 		result      Request
 		resultErr   error
 		err         error
 	)
+
+	if expectedState == "" {
+		return Request{}, errors.New("missing expected state")
+	}
 
 	if redirectURL, err = url.Parse(clientConfig.RedirectURL); err != nil {
 		return Request{}, fmt.Errorf("failed to parse redirect url: %s: %w", clientConfig.RedirectURL, err)
@@ -271,8 +280,6 @@ func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *h
 	}
 
 	mux.HandleFunc(redirectURL.Path, func(w http.ResponseWriter, r *http.Request) {
-		defer shutdown()
-
 		var (
 			req Request
 			err error
@@ -280,9 +287,6 @@ func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *h
 
 		if err = r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
-			mu.Lock()
-			resultErr = err
-			mu.Unlock()
 			return
 		}
 
@@ -298,32 +302,34 @@ func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *h
 
 			if signingKey, err = ReadKey(SigningKey, serverConfig.JWKsURI, hc); err != nil {
 				http.Error(w, "failed to read signing key", http.StatusBadRequest)
-				mu.Lock()
-				resultErr = err
-				mu.Unlock()
 				return
 			}
 
 			if clientConfig.EncryptionKey != "" {
 				if encryptionKey, err = ReadKey(EncryptionKey, clientConfig.EncryptionKey, hc); err != nil {
 					http.Error(w, "failed to read encryption key", http.StatusBadRequest)
-					mu.Lock()
-					resultErr = err
-					mu.Unlock()
 					return
 				}
 			}
 
 			if err = req.ParseJARM(signingKey, encryptionKey); err != nil {
 				http.Error(w, "failed to parse JARM response", http.StatusBadRequest)
-				mu.Lock()
-				resultErr = err
-				mu.Unlock()
 				return
 			}
 		}
 
-		w.Header().Set("Content-Type", "text/html")
+		if subtle.ConstantTimeCompare([]byte(req.Get("state")), []byte(expectedState)) != 1 {
+			http.Error(w, "invalid state", http.StatusBadRequest)
+			return
+		}
+
+		mu.Lock()
+		if accepted {
+			mu.Unlock()
+			http.Error(w, "callback already processed", http.StatusBadRequest)
+			return
+		}
+		accepted = true
 
 		if req.Get("error") != "" {
 			err = &Error{
@@ -332,19 +338,23 @@ func WaitForCallback(clientConfig ClientConfig, serverConfig ServerConfig, hc *h
 				Hint:        req.Get("error_hint"),
 				TraceID:     req.Get("trace_id"),
 			}
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`<script>window.close()</script> Authorization failed. You may close this window.`))
-		} else {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`<script>window.close()</script> Authorization succeeded. You may close this window.`))
 		}
 
-		mu.Lock()
 		result = req
-		if resultErr == nil {
-			resultErr = err
-		}
+		resultErr = err
 		mu.Unlock()
+
+		shutdown()
+
+		w.Header().Set("Content-Type", "text/html")
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`<script>window.close()</script> Authorization failed. You may close this window.`))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<script>window.close()</script> Authorization succeeded. You may close this window.`))
 	})
 
 	go func() {

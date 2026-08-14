@@ -17,13 +17,17 @@ func (c *OAuth2Cmd) ImplicitGrantFlow(clientConfig oauth2.ClientConfig, serverCo
 		return err
 	}
 
-	LogRequestln(authorizeRequest)
-	LogAuthURL(authorizeRequest.URL.String(), clientConfig.NoBrowser)
+	LogRequest(authorizeRequest)
+	LogNonce(authorizeRequest)
+	LogURL("authorization_url", authorizeRequest.URL.String(), clientConfig.NoBrowser)
 
-	LogWaiting("callback")
+	LogWaiting("authorization_response")
 
-	if callbackRequest, err = oauth2.WaitForCallback(clientConfig, serverConfig, hc); err != nil {
-		LogRequestln(callbackRequest)
+	if callbackRequest, err = oauth2.WaitForCallback(clientConfig, serverConfig, hc, authorizeRequest.State); err != nil {
+		LogRequest(callbackRequest)
+		if callbackRequest.URL != nil {
+			_ = CheckState(authorizeRequest.State, callbackRequest.Get("state"))
+		}
 		return err
 	}
 
@@ -32,9 +36,12 @@ func (c *OAuth2Cmd) ImplicitGrantFlow(clientConfig oauth2.ClientConfig, serverCo
 		tokenResponse.IDToken = callbackRequest.Get("id_token")
 	}
 
-	LogRequestln(callbackRequest)
-	LogTokenPayloadln(tokenResponse)
-	if err = CheckNonce(authorizeRequest.Nonce, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
+	LogRequest(callbackRequest)
+	LogTokens(tokenResponse)
+	if err = CheckState(authorizeRequest.State, callbackRequest.Get("state")); err != nil {
+		return err
+	}
+	if err = CheckIDToken(authorizeRequest.Nonce, authorizeRequest.NonceSource, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
 		return err
 	}
 
