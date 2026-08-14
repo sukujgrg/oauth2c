@@ -44,7 +44,7 @@ func TestSignJWT(t *testing.T) {
 	notEmpty(t, m["jti"].(string))
 }
 
-func TestCheckIDTokenNonce(t *testing.T) {
+func TestVerifyIDTokenWithNonce(t *testing.T) {
 	const (
 		expected = "n-0S6_WzA2Mj"
 		issuer   = "https://example.com/tid/aid"
@@ -125,25 +125,30 @@ func TestCheckIDTokenNonce(t *testing.T) {
 	hc := http.DefaultClient
 
 	t.Run("skip when expected empty", func(t *testing.T) {
-		got, err := CheckIDTokenNonce("ignored", "", sconfig, cconfig, hc)
+		got, checks, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(nil)), "", sconfig, cconfig, hc)
 		noErr(t, err)
 		empty(t, got)
+		eq(t, checkResult(t, checks, "id_token.nonce"), CheckSkip)
 	})
 
 	t.Run("skip when id token empty", func(t *testing.T) {
-		got, err := CheckIDTokenNonce("", expected, sconfig, cconfig, hc)
+		got, checks, err := VerifyIDTokenWithNonce("", expected, sconfig, cconfig, hc)
 		noErr(t, err)
 		empty(t, got)
+		eq(t, checkResult(t, checks, "id_token.nonce"), CheckSkip)
 	})
 
 	t.Run("matching nonce", func(t *testing.T) {
-		got, err := CheckIDTokenNonce(signRSA(t, validClaims(nil)), expected, sconfig, cconfig, hc)
+		got, checks, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(nil)), expected, sconfig, cconfig, hc)
 		noErr(t, err)
 		eq(t, expected, got)
+		eq(t, checkResult(t, checks, "id_token.nonce"), CheckPass)
+		eq(t, checkResult(t, checks, "id_token.extra_audiences"), CheckPass)
+		eq(t, checkResult(t, checks, "id_token.azp"), CheckPass)
 	})
 
 	t.Run("matching nonce without kid", func(t *testing.T) {
-		got, err := CheckIDTokenNonce(signRSAWithoutKID(t, validClaims(nil)), expected, sconfig, cconfig, hc)
+		got, _, err := VerifyIDTokenWithNonce(signRSAWithoutKID(t, validClaims(nil)), expected, sconfig, cconfig, hc)
 		noErr(t, err)
 		eq(t, expected, got)
 	})
@@ -163,7 +168,7 @@ func TestCheckIDTokenNonce(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, err = CheckIDTokenNonce(signRSAWithoutKID(t, validClaims(nil)), expected, ServerConfig{
+		_, _, err = VerifyIDTokenWithNonce(signRSAWithoutKID(t, validClaims(nil)), expected, ServerConfig{
 			JWKsURI: srv.URL,
 			Issuer:  issuer,
 		}, cconfig, hc)
@@ -172,42 +177,42 @@ func TestCheckIDTokenNonce(t *testing.T) {
 	})
 
 	t.Run("mismatched nonce", func(t *testing.T) {
-		got, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"nonce": "other"})), expected, sconfig, cconfig, hc)
+		got, _, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{"nonce": "other"})), expected, sconfig, cconfig, hc)
 		errorIs(t, err, ErrIDTokenNonceMismatch)
 		eq(t, "other", got)
 	})
 
 	t.Run("missing nonce", func(t *testing.T) {
-		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"nonce": nil})), expected, sconfig, cconfig, hc)
+		_, _, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{"nonce": nil})), expected, sconfig, cconfig, hc)
 		errorIs(t, err, ErrIDTokenNonceMissing)
 	})
 
 	t.Run("wrong issuer", func(t *testing.T) {
-		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"iss": "https://other.example"})), expected, sconfig, cconfig, hc)
+		_, _, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{"iss": "https://other.example"})), expected, sconfig, cconfig, hc)
 		isErr(t, err)
 		contains(t, err.Error(), "id token claims are invalid")
 	})
 
 	t.Run("wrong audience", func(t *testing.T) {
-		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"aud": "other-client"})), expected, sconfig, cconfig, hc)
+		_, _, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{"aud": "other-client"})), expected, sconfig, cconfig, hc)
 		isErr(t, err)
 		contains(t, err.Error(), "id token claims are invalid")
 	})
 
 	t.Run("expired", func(t *testing.T) {
-		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"exp": now.Add(-time.Hour).Unix()})), expected, sconfig, cconfig, hc)
+		_, _, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{"exp": now.Add(-time.Hour).Unix()})), expected, sconfig, cconfig, hc)
 		isErr(t, err)
 		contains(t, err.Error(), "id token claims are invalid")
 	})
 
 	t.Run("missing exp", func(t *testing.T) {
-		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"exp": nil})), expected, sconfig, cconfig, hc)
+		_, _, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{"exp": nil})), expected, sconfig, cconfig, hc)
 		isErr(t, err)
 		contains(t, err.Error(), "exp claim is missing")
 	})
 
 	t.Run("missing iat", func(t *testing.T) {
-		_, err := CheckIDTokenNonce(signRSA(t, validClaims(map[string]interface{}{"iat": nil})), expected, sconfig, cconfig, hc)
+		_, _, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{"iat": nil})), expected, sconfig, cconfig, hc)
 		isErr(t, err)
 		contains(t, err.Error(), "iat claim is missing")
 	})
@@ -219,17 +224,18 @@ func TestCheckIDTokenNonce(t *testing.T) {
 		noErr(t, err)
 		eq(t, expected, unsafeClaims["nonce"])
 
-		_, err = CheckIDTokenNonce(forged, expected, sconfig, cconfig, hc)
+		_, checks, err := VerifyIDTokenWithNonce(forged, expected, sconfig, cconfig, hc)
 		isErr(t, err)
 		notErrorIs(t, err, ErrIDTokenNonceMismatch)
 		notErrorIs(t, err, ErrIDTokenNonceMissing)
+		eq(t, checkResult(t, checks, "id_token.nonce"), CheckSkip)
 	})
 
 	t.Run("hmac signature", func(t *testing.T) {
 		secret := []byte("test-secret-that-is-long-enough-for-hs256")
 		token := signHMAC(t, validClaims(nil), secret)
 
-		got, err := CheckIDTokenNonce(token, expected, ServerConfig{Issuer: issuer}, ClientConfig{
+		got, _, err := VerifyIDTokenWithNonce(token, expected, ServerConfig{Issuer: issuer}, ClientConfig{
 			IssuerURL:    issuer,
 			ClientID:     clientID,
 			ClientSecret: string(secret),
@@ -237,4 +243,44 @@ func TestCheckIDTokenNonce(t *testing.T) {
 		noErr(t, err)
 		eq(t, expected, got)
 	})
+
+	t.Run("untrusted extra audience", func(t *testing.T) {
+		_, checks, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{
+			"aud": []string{clientID, "https://other.example"},
+			"azp": clientID,
+		})), expected, sconfig, cconfig, hc)
+		isErr(t, err)
+		contains(t, err.Error(), "untrusted additional audiences")
+		eq(t, checkResult(t, checks, "id_token.aud"), CheckPass)
+		eq(t, checkResult(t, checks, "id_token.extra_audiences"), CheckFail)
+		eq(t, checkResult(t, checks, "id_token.azp"), CheckPass)
+		eq(t, checkResult(t, checks, "id_token.nonce"), CheckPass)
+	})
+
+	t.Run("azp mismatch", func(t *testing.T) {
+		_, checks, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{"azp": "other-client"})), expected, sconfig, cconfig, hc)
+		isErr(t, err)
+		contains(t, err.Error(), "azp")
+		eq(t, checkResult(t, checks, "id_token.azp"), CheckFail)
+	})
+
+	t.Run("multiple audiences require azp", func(t *testing.T) {
+		_, checks, err := VerifyIDTokenWithNonce(signRSA(t, validClaims(map[string]interface{}{
+			"aud": []string{clientID, "https://other.example"},
+		})), expected, sconfig, cconfig, hc)
+		isErr(t, err)
+		eq(t, checkResult(t, checks, "id_token.extra_audiences"), CheckFail)
+		eq(t, checkResult(t, checks, "id_token.azp"), CheckFail)
+	})
+}
+
+func checkResult(t *testing.T, checks []Verification, name string) string {
+	t.Helper()
+	for _, check := range checks {
+		if check.Name == name {
+			return check.Result
+		}
+	}
+	t.Fatalf("missing check %s", name)
+	return ""
 }

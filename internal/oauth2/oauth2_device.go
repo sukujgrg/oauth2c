@@ -3,10 +3,12 @@ package oauth2
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type DeviceAuthorizationResponse struct {
@@ -42,6 +44,7 @@ func RequestDeviceAuthorization(ctx context.Context, cconfig ClientConfig, sconf
 
 	if cconfig.Nonce != "" {
 		request.Nonce = cconfig.Nonce
+		request.NonceSource = NonceSourceCustom
 		request.Form.Set("nonce", cconfig.Nonce)
 	}
 
@@ -79,4 +82,28 @@ func RequestDeviceAuthorization(ctx context.Context, cconfig ClientConfig, sconf
 	}
 
 	return request, response, nil
+}
+
+const (
+	DeviceDefaultPollInterval = 5 * time.Second
+	DeviceSlowDownIncrement   = 5 * time.Second
+)
+
+// DevicePollInterval applies RFC 8628 polling backoff. authorization_pending
+// retries at the current interval; slow_down increases all subsequent
+// intervals by five seconds.
+func DevicePollInterval(current time.Duration, err error) (time.Duration, bool) {
+	var oauthErr *Error
+	if !errors.As(err, &oauthErr) {
+		return current, false
+	}
+
+	switch oauthErr.ErrorCode {
+	case ErrAuthorizationPending:
+		return current, true
+	case ErrSlowDown:
+		return current + DeviceSlowDownIncrement, true
+	default:
+		return current, false
+	}
 }

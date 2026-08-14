@@ -2,6 +2,7 @@ package oauth2
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -54,7 +55,9 @@ func TestAuthorizeRequestNonce(t *testing.T) {
 		noErr(t, err)
 		notEmpty(t, r.Form.Get("nonce"))
 		eq(t, r.Form.Get("nonce"), r.Nonce)
+		eq(t, r.NonceSource, NonceSourceGenerated)
 		notEmpty(t, r.Form.Get("state"))
+		eq(t, r.Form.Get("state"), r.State)
 	})
 
 	tests := map[string]struct {
@@ -88,7 +91,9 @@ func TestAuthorizeRequestNonce(t *testing.T) {
 
 			eq(t, r.Form.Get("nonce"), tc.wantForm)
 			eq(t, r.Nonce, tc.wantForm)
+			eq(t, r.NonceSource, NonceSourceCustom)
 			notEmpty(t, r.Form.Get("state"))
+			eq(t, r.Form.Get("state"), r.State)
 
 			if tc.pkce {
 				notEmpty(t, codeVerifier)
@@ -154,46 +159,103 @@ func TestRequestTokenResource(t *testing.T) {
 }
 
 func TestRequestDeviceAuthorizationNonce(t *testing.T) {
-	tests := map[string]struct {
-		nonce    string
-		wantForm string
-	}{
-		"unset": {
-			nonce:    "",
-			wantForm: "",
-		},
-		"set": {
-			nonce:    "n-0S6_WzA2Mj",
-			wantForm: "n-0S6_WzA2Mj",
-		},
+	t.Run("unset does not send nonce", func(t *testing.T) {
+		var got url.Values
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			noErr(t, err)
+
+			got, err = url.ParseQuery(string(body))
+			noErr(t, err)
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"device_code":"dev","user_code":"user","verification_uri":"https://example.com/device","expires_in":600}`))
+		}))
+		defer srv.Close()
+
+		req, _, err := RequestDeviceAuthorization(context.Background(), ClientConfig{
+			ClientID: "test-client",
+		}, ServerConfig{DeviceAuthorizationEndpoint: srv.URL}, &http.Client{})
+		noErr(t, err)
+		empty(t, got.Get("nonce"))
+		empty(t, req.Nonce)
+	})
+
+	t.Run("set uses custom nonce", func(t *testing.T) {
+		var got url.Values
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			noErr(t, err)
+
+			got, err = url.ParseQuery(string(body))
+			noErr(t, err)
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"device_code":"dev","user_code":"user","verification_uri":"https://example.com/device","expires_in":600}`))
+		}))
+		defer srv.Close()
+
+		req, _, err := RequestDeviceAuthorization(context.Background(), ClientConfig{
+			ClientID: "test-client",
+			Nonce:    "n-0S6_WzA2Mj",
+		}, ServerConfig{DeviceAuthorizationEndpoint: srv.URL}, &http.Client{})
+		noErr(t, err)
+		eq(t, got.Get("nonce"), "n-0S6_WzA2Mj")
+		eq(t, req.Nonce, "n-0S6_WzA2Mj")
+		eq(t, req.NonceSource, NonceSourceCustom)
+	})
+}
+
+func TestAuthenticateClientMTLSEndpointAlias(t *testing.T) {
+	conventional := "https://as.example.com/token"
+	alias := "https://mtls.as.example.com/token"
+	cconfig := ClientConfig{
+		ClientID:   "test-client",
+		AuthMethod: TLSClientAuthMethod,
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			var got url.Values
+	t.Run("uses advertised alias", func(t *testing.T) {
+		r := &Request{Form: url.Values{}}
+		endpoint, err := r.AuthenticateClient(conventional, alias, cconfig, ServerConfig{}, clientWithTLSCert(t))
+		noErr(t, err)
+		eq(t, endpoint, alias)
+		eq(t, r.UsedMTLSAlias, true)
+		notEmpty(t, r.Cert)
+	})
 
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				body, err := io.ReadAll(r.Body)
-				noErr(t, err)
+	t.Run("keeps conventional endpoint when alias omitted", func(t *testing.T) {
+		r := &Request{Form: url.Values{}}
+		endpoint, err := r.AuthenticateClient(conventional, "", cconfig, ServerConfig{}, clientWithTLSCert(t))
+		noErr(t, err)
+		eq(t, endpoint, conventional)
+		eq(t, r.UsedMTLSAlias, false)
+		notEmpty(t, r.Cert)
+	})
 
-				got, err = url.ParseQuery(string(body))
-				noErr(t, err)
+	t.Run("keeps conventional endpoint without client certificate", func(t *testing.T) {
+		r := &Request{Form: url.Values{}}
+		endpoint, err := r.AuthenticateClient(conventional, alias, cconfig, ServerConfig{}, &http.Client{})
+		noErr(t, err)
+		eq(t, endpoint, conventional)
+		eq(t, r.UsedMTLSAlias, false)
+		empty(t, r.Cert)
+	})
+}
 
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"device_code":"dev","user_code":"user","verification_uri":"https://example.com/device","expires_in":600}`))
-			}))
-			defer srv.Close()
+func clientWithTLSCert(t *testing.T) *http.Client {
+	t.Helper()
 
-			cconfig := ClientConfig{
-				ClientID: "test-client",
-				Nonce:    tc.nonce,
-			}
-			sconfig := ServerConfig{DeviceAuthorizationEndpoint: srv.URL}
+	cert, err := tls.LoadX509KeyPair("../../data/cert.pem", "../../data/key.pem")
+	noErr(t, err)
 
-			req, _, err := RequestDeviceAuthorization(context.Background(), cconfig, sconfig, &http.Client{})
-			noErr(t, err)
-			eq(t, got.Get("nonce"), tc.wantForm)
-			eq(t, req.Nonce, tc.wantForm)
-		})
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				MinVersion:   tls.VersionTLS12,
+			},
+		},
 	}
 }

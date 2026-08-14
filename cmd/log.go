@@ -1,259 +1,207 @@
 package cmd
 
 import (
-	"encoding/json/jsontext"
-	"encoding/json/v2"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cli/browser"
 	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/sukujgrg/oauth2c/internal/oauth2"
+	"github.com/sukujgrg/oauth2c/internal/yamlprint"
 )
 
-var logOut io.Writer = os.Stderr
+// trace is the educational stderr log. --silent discards it so only the
+// token JSON on stdout remains.
+var trace = stderrLog{w: os.Stderr}
 
-const indentUnit = "  "
-
-func pad(level int) string {
-	return strings.Repeat(indentUnit, level)
+type stderrLog struct {
+	w io.Writer
 }
 
-func logln() {
-	if silent {
+func (l *stderrLog) enabled() bool {
+	return !silent && l != nil && l.w != nil && l.w != io.Discard
+}
+
+func (l *stderrLog) writer() io.Writer {
+	if !l.enabled() {
+		return io.Discard
+	}
+	return l.w
+}
+
+func (l *stderrLog) line(format string, args ...any) {
+	if !l.enabled() {
 		return
 	}
-
-	_, _ = fmt.Fprintln(logOut)
+	_, _ = fmt.Fprintf(l.writer(), format+"\n", args...)
 }
 
-func logf(msg string, args ...interface{}) {
-	if silent {
+func (l *stderrLog) yaml(v any) {
+	if !l.enabled() {
 		return
 	}
-
-	_, _ = fmt.Fprintf(logOut, msg+"\n", args...)
+	if err := yml.Write(l.writer(), v); err != nil {
+		l.error(err)
+	}
 }
 
-func logfAt(level int, msg string, args ...interface{}) {
-	logf(pad(level)+msg, args...)
+func (l *stderrLog) doc(v any) {
+	l.yaml(v)
+	l.line("")
 }
 
-func logKV(key, value string) {
-	logKVAt(0, key, value)
-}
-
-func logKVAt(level int, key, value string) {
-	if value == "" {
+func (l *stderrLog) error(err error) {
+	if err == nil || !l.enabled() {
 		return
 	}
-
-	logfAt(level, "%s: %s", key, value)
+	if writeErr := yml.Write(l.writer(), struct {
+		Error string `yaml:"error"`
+	}{Error: err.Error()}); writeErr != nil {
+		_, _ = fmt.Fprintf(l.writer(), "error: %s\n", err)
+	}
 }
 
-func logBlock(name string, rows [][2]string) {
-	if silent {
+var yml = yamlprint.New()
+
+func printSection(name string, v any) {
+	if name == "" {
 		return
 	}
-
-	logf("%s:", name)
-	for _, row := range rows {
-		logKVAt(1, row[0], row[1])
-	}
-	endSection()
-}
-
-func endSection() {
-	logln()
+	trace.doc(map[string]any{name: v})
 }
 
 func LogWaiting(msg string) {
-	logKV("waiting", msg)
-	endSection()
+	printSection("waiting", msg)
 }
 
 func LogError(err error) {
-	if err == nil {
-		return
-	}
-
-	_, _ = fmt.Fprintf(logOut, "error: %s\n", err)
+	trace.error(err)
 }
 
 func LogWarning(msg string) {
-	logf("warning: %s", msg)
+	printSection("warning", msg)
 }
 
-func trueFlag(v bool) string {
-	if !v {
-		return ""
-	}
-	return "true"
-}
-
-func LogInputData(cc oauth2.ClientConfig) {
-	rows := [][2]string{
-		{"issuer_url", cc.IssuerURL},
-		{"client_id", cc.ClientID},
-		{"client_secret", cc.ClientSecret},
-		{"grant_type", cc.GrantType},
-		{"auth_method", cc.AuthMethod},
-		{"response_types", strings.Join(cc.ResponseType, ", ")},
-		{"response_mode", cc.ResponseMode},
-		{"scopes", strings.Join(cc.Scopes, ", ")},
-		{"audience", strings.Join(cc.Audience, ", ")},
-		{"acr_values", strings.Join(cc.ACRValues, ", ")},
-		{"pkce", trueFlag(cc.PKCE)},
-		{"nonce", cc.Nonce},
-		{"username", cc.Username},
-		{"password", cc.Password},
-		{"refresh_token", cc.RefreshToken},
-		{"signing_key", cc.SigningKey},
-		{"subject_token_type", cc.SubjectTokenType},
-		{"actor_token_type", cc.ActorTokenType},
-		{"tls_cert", cc.TLSCert},
-		{"tls_key", cc.TLSKey},
-		{"tls_root_ca", cc.TLSRootCA},
-	}
-
-	for _, row := range rows {
-		logKV(row[0], row[1])
-	}
-	endSection()
-}
-
-func logJSON(key string, value interface{}) {
-	logJSONAt(0, key, value)
-}
-
-func logJSONAt(level int, key string, value interface{}) {
-	if silent {
-		return
-	}
-
-	output, err := json.Marshal(value, jsontext.WithIndent(indentUnit))
-	if err != nil {
-		LogError(err)
-		return
-	}
-
-	if key != "" {
-		logfAt(level, "%s:", key)
-		level++
-	}
-	for line := range strings.SplitSeq(strings.TrimRight(string(output), "\n"), "\n") {
-		logfAt(level, "%s", line)
-	}
+func LogInput(cc oauth2.ClientConfig) {
+	printSection("input", clientInputLog{
+		IssuerURL:              cc.IssuerURL,
+		ClientID:               cc.ClientID,
+		ClientSecret:           cc.ClientSecret,
+		GrantType:              cc.GrantType,
+		AuthMethod:             cc.AuthMethod,
+		ResponseTypes:          compactStrings(cc.ResponseType),
+		ResponseMode:           cc.ResponseMode,
+		RedirectURL:            cc.RedirectURL,
+		Scopes:                 compactStrings(cc.Scopes),
+		Audience:               compactStrings(cc.Audience),
+		Resource:               compactStrings(cc.Resource),
+		ACRValues:              compactStrings(cc.ACRValues),
+		PKCE:                   cc.PKCE,
+		PAR:                    cc.PAR,
+		RequestObject:          cc.RequestObject,
+		EncryptedRequestObject: cc.EncryptedRequestObject,
+		DPoP:                   cc.DPoP,
+		Nonce:                  cc.Nonce,
+		Username:               cc.Username,
+		Password:               cc.Password,
+		RefreshToken:           cc.RefreshToken,
+		SigningKey:             cc.SigningKey,
+		SubjectTokenType:       cc.SubjectTokenType,
+		ActorTokenType:         cc.ActorTokenType,
+		IDTokenHint:            cc.IDTokenHint,
+		LoginHint:              cc.LoginHint,
+		IDPHint:                cc.IDPHint,
+		Claims:                 cc.Claims,
+		RAR:                    cc.RAR,
+		Prompt:                 compactStrings(cc.Prompt),
+		MaxAge:                 cc.MaxAge,
+		Purpose:                cc.Purpose,
+		AuthenticationCode:     cc.AuthenticationCode,
+		TLSCert:                cc.TLSCert,
+		TLSKey:                 cc.TLSKey,
+		TLSRootCA:              cc.TLSRootCA,
+	})
 }
 
 func LogRequest(r oauth2.Request) {
-	if silent {
-		return
-	}
-
 	if r.URL == nil {
 		return
 	}
-
-	if r.URL.Scheme != "" {
-		logf("%s %s://%s%s", r.Method, r.URL.Scheme, r.URL.Host, r.URL.Path)
-	} else {
-		logf("%s %s", r.Method, r.URL.Path)
-	}
-
-	logPairs(1, r.Headers)
-	logPairs(1, r.URL.Query())
-	logPairs(1, r.Form)
-
-	if r.Cert != nil {
-		logKVAt(1, "certificate_subject", r.Cert.Subject.String())
-		logKVAt(1, "certificate_issuer", r.Cert.Issuer.String())
-		logKVAt(1, "certificate_not_before", r.Cert.NotBefore.UTC().Format(time.RFC3339))
-		logKVAt(1, "certificate_not_after", r.Cert.NotAfter.UTC().Format(time.RFC3339))
-	}
-}
-
-func logPairs(level int, values map[string][]string) {
-	if len(values) == 0 {
-		return
-	}
-
-	keys := make([]string, 0, len(values))
-	for k := range values {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-
-	for _, k := range keys {
-		logKVAt(level, k, strings.Join(values[k], ", "))
-	}
-}
-
-func LogRequestln(request oauth2.Request) {
-	if silent {
-		return
-	}
-
-	LogRequest(request)
-	endSection()
+	printSection("request", requestFields(r, nil))
 }
 
 func LogRequestAndResponse(request oauth2.Request, response interface{}) {
-	if silent {
+	var generic any
+	if response != nil {
+		var err error
+		generic, err = yamlprint.FromJSON(response)
+		if err != nil {
+			LogError(err)
+			return
+		}
+	}
+
+	if request.URL == nil {
+		if generic != nil {
+			printSection("response", generic)
+		}
 		return
 	}
 
-	LogRequest(request)
-	logJSONAt(1, "response", response)
-	endSection()
+	printSection("request", requestFields(request, generic))
 }
 
-func LogRequestAndResponseln(request oauth2.Request, response interface{}) {
-	LogRequestAndResponse(request, response)
+func LogTokens(response oauth2.TokenResponse) {
+	LogToken("access_token", response.AccessToken)
+	LogToken("id_token", response.IDToken)
 }
 
-func LogTokenPayload(response oauth2.TokenResponse) {
-	if silent {
-		return
-	}
-
-	LogAccessTokenPayload("access_token", response.AccessToken)
-	LogAccessTokenPayload("id_token", response.IDToken)
-}
-
-func LogAccessTokenPayload(label, token string) {
-	if silent || token == "" {
+func LogToken(label, token string) {
+	if !trace.enabled() || token == "" {
 		return
 	}
 
 	_, claims, err := oauth2.UnsafeParseJWT(token)
 	if err == nil {
-		logJSON(label, claims)
-		endSection()
+		printSection(label, claims)
 		return
 	}
 
 	if _, encErr := jose.ParseEncrypted(token, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); encErr == nil {
-		logKV(label, "(jwe)")
-		endSection()
+		printSection(label, "(jwe)")
 		return
 	}
 
-	logKV(label, "(opaque)")
-	endSection()
+	printSection(label, "(opaque)")
 }
 
-func LogTokenPayloadln(response oauth2.TokenResponse) {
-	LogTokenPayload(response)
+func nonceSent(reqs ...oauth2.Request) (value, source string) {
+	for _, r := range reqs {
+		if r.Nonce != "" {
+			return r.Nonce, r.NonceSource
+		}
+	}
+	return "", ""
+}
+
+func LogNonce(r oauth2.Request) {
+	if r.Nonce == "" {
+		return
+	}
+
+	printSection("nonce", nonceLog{
+		Spec:    "OpenID Connect Core",
+		Purpose: "replay protection",
+		Source:  r.NonceSource,
+		Value:   r.Nonce,
+	})
 }
 
 func LogPKCE(codeVerifier string) {
@@ -261,132 +209,323 @@ func LogPKCE(codeVerifier string) {
 		return
 	}
 
-	logBlock("pkce", [][2]string{
-		{"code_verifier", codeVerifier},
-		{"code_challenge", "S256(code_verifier)"},
+	printSection("pkce", pkceLog{
+		Spec:          "RFC 7636",
+		Purpose:       "authorization code interception protection",
+		CodeVerifier:  codeVerifier,
+		CodeChallenge: "S256(code_verifier)",
 	})
 }
 
-func CheckNonce(expected, idToken string, clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
-	if expected == "" || idToken == "" {
-		return nil
+func LogVerification(v oauth2.Verification) {
+	if v.Name == "" {
+		return
+	}
+	printSection("check "+v.Name, v)
+}
+
+func LogVerifications(checks []oauth2.Verification) {
+	for _, check := range checks {
+		LogVerification(check)
+	}
+}
+
+func CheckState(expected, received string) error {
+	result := oauth2.CheckPass
+	var err error
+	if expected == "" {
+		result = oauth2.CheckFail
+		err = errors.New("missing expected state")
+	} else if subtle.ConstantTimeCompare([]byte(expected), []byte(received)) != 1 {
+		result = oauth2.CheckFail
+		err = errors.New("state does not match")
 	}
 
-	got, err := oauth2.CheckIDTokenNonce(idToken, expected, serverConfig, clientConfig, hc)
-
-	if !silent {
-		received := got
-		switch {
-		case errors.Is(err, oauth2.ErrIDTokenNonceMissing):
-			received = "(missing)"
-		case err != nil && got == "":
-			received = "(unverified)"
-		}
-
-		logBlock("nonce", [][2]string{
-			{"sent", expected},
-			{"id_token", received},
-			{"match", strconv.FormatBool(err == nil)},
-		})
-	}
+	LogVerification(oauth2.Verification{
+		Name:     "state",
+		Spec:     "RFC 6749",
+		Purpose:  "CSRF protection",
+		Expected: expected,
+		Received: received,
+		Result:   result,
+	})
 
 	return err
 }
 
-func LogAuthMethod(config oauth2.ClientConfig) {
-	if config.AuthMethod != oauth2.ClientSecretBasicAuthMethod {
+func CheckIDToken(expectedNonce, nonceSource, idToken string, clientConfig oauth2.ClientConfig, serverConfig oauth2.ServerConfig, hc *http.Client) error {
+	if idToken == "" && expectedNonce == "" {
+		return nil
+	}
+
+	_, checks, err := oauth2.VerifyIDTokenWithNonce(idToken, expectedNonce, serverConfig, clientConfig, hc)
+	if nonceSource != "" {
+		for i := range checks {
+			if checks[i].Name == "id_token.nonce" {
+				checks[i].Source = nonceSource
+			}
+		}
+	}
+	LogVerifications(checks)
+	if errors.Is(err, oauth2.ErrIDTokenNonceMissing) {
+		return nil
+	}
+	return err
+}
+
+func CheckMTLS(request oauth2.Request) {
+	if request.Cert == nil {
 		return
 	}
 
-	logBlock("auth", [][2]string{
-		{"authorization", "Basic BASE64(client_id:client_secret)"},
+	received := "conventional endpoint (no mtls alias advertised)"
+	if request.UsedMTLSAlias {
+		received = "mtls_endpoint_aliases"
+	}
+	if request.URL != nil {
+		received += ": " + request.URL.String()
+	}
+
+	LogVerification(oauth2.Verification{
+		Name:     "mtls",
+		Spec:     "RFC 8705",
+		Purpose:  "certificate-bound client authentication",
+		Received: received,
+		Result:   oauth2.CheckPass,
+	})
+}
+
+func CheckDeviceSlowDown(errorCode string, interval time.Duration) {
+	LogVerification(oauth2.Verification{
+		Name:     "device.slow_down",
+		Spec:     "RFC 8628",
+		Purpose:  "increase polling interval by 5s",
+		Received: errorCode,
+		Detail:   "next interval " + interval.String(),
+		Result:   oauth2.CheckPass,
 	})
 }
 
 func LogJARM(request oauth2.Request) {
-	if silent || len(request.JARM) == 0 {
+	if len(request.JARM) == 0 {
 		return
 	}
-
-	logJSON("jarm", request.JARM)
-	endSection()
+	printSection("jarm", request.JARM)
 }
 
 func LogRequestObject(r oauth2.Request) {
-	var (
-		request        = r.URL.Query().Get("request")
-		requestClaims  map[string]interface{}
-		token          *jwt.JSONWebToken
-		encryptedToken *jose.JSONWebEncryption
-		err            error
-	)
+	if !trace.enabled() {
+		return
+	}
 
+	var request string
+	if r.URL != nil {
+		request = r.URL.Query().Get("request")
+	}
 	if request == "" {
 		request = r.Form.Get("request")
 	}
-
-	if silent || request == "" {
+	if request == "" {
 		return
 	}
 
-	if token, requestClaims, err = oauth2.UnsafeParseJWT(r.RequestObject); err != nil {
+	token, requestClaims, err := oauth2.UnsafeParseJWT(r.RequestObject)
+	if err != nil {
 		LogError(err)
 		return
 	}
 
-	if encryptedToken, err = jose.ParseEncrypted(request, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); err == nil {
-		logKV("request_object", fmt.Sprintf("JWE-%s(JWT-%s)", encryptedToken.Header.Algorithm, token.Headers[0].Algorithm))
-	} else {
-		logKV("request_object", fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
+	encoding := fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm)
+	if encryptedToken, encErr := jose.ParseEncrypted(request, oauth2.JOSEKeyAlgorithms, oauth2.JOSEContentEncryption); encErr == nil {
+		encoding = fmt.Sprintf("JWE-%s(JWT-%s)", encryptedToken.Header.Algorithm, token.Headers[0].Algorithm)
 	}
 
-	logJSONAt(1, "", requestClaims)
-	endSection()
+	printSection("request_object", signedJWTLog{
+		Encoding: encoding,
+		Claims:   requestClaims,
+	})
 }
 
 func LogAssertion(request oauth2.Request, name string) {
-	var (
-		assertion = request.Form.Get(name)
-		token     *jwt.JSONWebToken
-		claims    map[string]interface{}
-		err       error
-	)
-
-	if silent || assertion == "" {
+	if !trace.enabled() {
 		return
 	}
 
-	if token, claims, err = oauth2.UnsafeParseJWT(assertion); err != nil {
+	assertion := request.Form.Get(name)
+	if assertion == "" {
+		return
+	}
+
+	token, claims, err := oauth2.UnsafeParseJWT(assertion)
+	if err != nil {
 		LogError(err)
 		return
 	}
 
-	logKV(name, fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm))
-	logJSONAt(1, "", claims)
-	endSection()
+	printSection(name, signedJWTLog{
+		Encoding: fmt.Sprintf("JWT-%s", token.Headers[0].Algorithm),
+		Claims:   claims,
+	})
 }
 
 func LogSubjectTokenAndActorToken(request oauth2.Request) {
-	if silent {
-		return
-	}
-
-	LogAccessTokenPayload("subject_token", request.Form.Get("subject_token"))
-	LogAccessTokenPayload("actor_token", request.Form.Get("actor_token"))
+	LogToken("subject_token", request.Form.Get("subject_token"))
+	LogToken("actor_token", request.Form.Get("actor_token"))
 }
 
-func LogAuthURL(url string, noBrowser bool) {
-	if noBrowser && silent {
-		_, _ = fmt.Fprintln(os.Stderr, url)
-		return
-	}
-
-	logKV("url", url)
-	endSection()
+func LogURL(name, rawURL string, noBrowser bool) {
+	printSection(name, rawURL)
 
 	if !noBrowser {
-		if err := browser.OpenURL(url); err != nil {
+		if err := browser.OpenURL(rawURL); err != nil {
 			LogError(err)
 		}
 	}
+}
+
+type clientInputLog struct {
+	IssuerURL              string   `yaml:"issuer_url,omitempty"`
+	ClientID               string   `yaml:"client_id,omitempty"`
+	ClientSecret           string   `yaml:"client_secret,omitempty"`
+	GrantType              string   `yaml:"grant_type,omitempty"`
+	AuthMethod             string   `yaml:"auth_method,omitempty"`
+	ResponseTypes          []string `yaml:"response_types,omitempty,flow"`
+	ResponseMode           string   `yaml:"response_mode,omitempty"`
+	RedirectURL            string   `yaml:"redirect_url,omitempty"`
+	Scopes                 []string `yaml:"scopes,omitempty,flow"`
+	Audience               []string `yaml:"audience,omitempty,flow"`
+	Resource               []string `yaml:"resource,omitempty,flow"`
+	ACRValues              []string `yaml:"acr_values,omitempty,flow"`
+	PKCE                   bool     `yaml:"pkce,omitempty"`
+	PAR                    bool     `yaml:"par,omitempty"`
+	RequestObject          bool     `yaml:"request_object,omitempty"`
+	EncryptedRequestObject bool     `yaml:"encrypted_request_object,omitempty"`
+	DPoP                   bool     `yaml:"dpop,omitempty"`
+	Nonce                  string   `yaml:"nonce,omitempty"`
+	Username               string   `yaml:"username,omitempty"`
+	Password               string   `yaml:"password,omitempty"`
+	RefreshToken           string   `yaml:"refresh_token,omitempty"`
+	SigningKey             string   `yaml:"signing_key,omitempty"`
+	SubjectTokenType       string   `yaml:"subject_token_type,omitempty"`
+	ActorTokenType         string   `yaml:"actor_token_type,omitempty"`
+	IDTokenHint            string   `yaml:"id_token_hint,omitempty"`
+	LoginHint              string   `yaml:"login_hint,omitempty"`
+	IDPHint                string   `yaml:"idp_hint,omitempty"`
+	Claims                 string   `yaml:"claims,omitempty"`
+	RAR                    string   `yaml:"rar,omitempty"`
+	Prompt                 []string `yaml:"prompt,omitempty,flow"`
+	MaxAge                 string   `yaml:"max_age,omitempty"`
+	Purpose                string   `yaml:"purpose,omitempty"`
+	AuthenticationCode     string   `yaml:"authentication_code,omitempty"`
+	TLSCert                string   `yaml:"tls_cert,omitempty"`
+	TLSKey                 string   `yaml:"tls_key,omitempty"`
+	TLSRootCA              string   `yaml:"tls_root_ca,omitempty"`
+}
+
+type nonceLog struct {
+	Spec    string `yaml:"spec,omitempty"`
+	Purpose string `yaml:"purpose,omitempty"`
+	Source  string `yaml:"source,omitempty"`
+	Value   string `yaml:"value,omitempty"`
+}
+
+type pkceLog struct {
+	Spec          string `yaml:"spec,omitempty"`
+	Purpose       string `yaml:"purpose,omitempty"`
+	CodeVerifier  string `yaml:"code_verifier,omitempty"`
+	CodeChallenge string `yaml:"code_challenge,omitempty"`
+}
+
+type signedJWTLog struct {
+	Encoding string         `yaml:"encoding"`
+	Claims   map[string]any `yaml:",inline"`
+}
+
+type certificateLog struct {
+	Subject   string `yaml:"subject,omitempty"`
+	Issuer    string `yaml:"issuer,omitempty"`
+	NotBefore string `yaml:"not_before,omitempty"`
+	NotAfter  string `yaml:"not_after,omitempty"`
+}
+
+type requestLog struct {
+	Method      string            `yaml:"method,omitempty"`
+	URL         string            `yaml:"url,omitempty"`
+	Params      map[string]string `yaml:",inline"`
+	Certificate *certificateLog   `yaml:"certificate,omitempty"`
+	Response    any               `yaml:"response,omitempty"`
+}
+
+func requestFields(r oauth2.Request, response any) requestLog {
+	params := map[string]string{}
+	mergeHeaders(params, r.Headers)
+	if r.URL != nil {
+		mergeValues(params, r.URL.Query())
+	}
+	mergeValues(params, r.Form)
+
+	out := requestLog{
+		Method:   r.Method,
+		URL:      requestURL(r),
+		Params:   params,
+		Response: response,
+	}
+	if r.Cert != nil {
+		out.Certificate = &certificateLog{
+			Subject:   r.Cert.Subject.String(),
+			Issuer:    r.Cert.Issuer.String(),
+			NotBefore: r.Cert.NotBefore.UTC().Format(time.RFC3339),
+			NotAfter:  r.Cert.NotAfter.UTC().Format(time.RFC3339),
+		}
+	}
+	return out
+}
+
+func requestURL(r oauth2.Request) string {
+	if r.URL == nil {
+		return ""
+	}
+	if r.URL.Scheme != "" {
+		return fmt.Sprintf("%s://%s%s", r.URL.Scheme, r.URL.Host, r.URL.Path)
+	}
+	return r.URL.Path
+}
+
+func mergeHeaders(dst map[string]string, values map[string][]string) {
+	for key, vals := range values {
+		if len(vals) == 0 {
+			continue
+		}
+		if strings.EqualFold(key, "Authorization") {
+			dst[key] = redactAuthorization(vals[0])
+			continue
+		}
+		dst[key] = strings.Join(vals, ", ")
+	}
+}
+
+func redactAuthorization(value string) string {
+	if len(value) >= 6 && strings.EqualFold(value[:6], "basic ") {
+		return "Basic BASE64(client_id:client_secret)"
+	}
+	return "(redacted)"
+}
+
+func mergeValues(dst map[string]string, values map[string][]string) {
+	for key, vals := range values {
+		if len(vals) == 0 {
+			continue
+		}
+		dst[key] = strings.Join(vals, ", ")
+	}
+}
+
+func compactStrings(in []string) []string {
+	var out []string
+	for _, s := range in {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

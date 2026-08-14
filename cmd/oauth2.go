@@ -78,7 +78,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd.PersistentFlags().DurationVar(&cconfig.HTTPTimeout, "http-timeout", time.Minute, "http client timeout")
 	cmd.PersistentFlags().DurationVar(&cconfig.BrowserTimeout, "browser-timeout", 10*time.Minute, "browser timeout")
 	cmd.PersistentFlags().BoolVar(&cconfig.Insecure, "insecure", false, "allow insecure connections")
-	cmd.PersistentFlags().BoolVarP(&silent, "silent", "s", false, "silent mode")
+	cmd.PersistentFlags().BoolVarP(&silent, "silent", "s", false, "print only the token JSON on stdout")
 	cmd.PersistentFlags().BoolVar(&cconfig.NoBrowser, "no-browser", false, "do not open browser")
 	cmd.PersistentFlags().BoolVar(&cconfig.DPoP, "dpop", false, "use DPoP")
 	cmd.PersistentFlags().StringVar(&cconfig.Claims, "claims", "", "use claims")
@@ -195,12 +195,13 @@ func (c *OAuth2Cmd) Authorize(
 			clientConfig.IssuerURL,
 			hc,
 		); err != nil {
-			LogRequestln(serverRequest)
+			LogRequestAndResponse(serverRequest, err)
 			return err
 		}
+		LogRequestAndResponse(serverRequest, serverConfig)
 	}
 
-	LogInputData(clientConfig)
+	LogInput(clientConfig)
 
 	switch clientConfig.GrantType {
 	case oauth2.AuthorizationCodeGrantType:
@@ -227,8 +228,7 @@ func (c *OAuth2Cmd) Authorize(
 func (c *OAuth2Cmd) PrintResult(result interface{}) {
 	output, err := json.Marshal(result)
 	if err != nil {
-		_, _ = fmt.Fprintf(c.ErrOrStderr(), "%+v", err)
-		_, _ = fmt.Fprintln(c.ErrOrStderr())
+		LogError(err)
 		return
 	}
 

@@ -4,14 +4,20 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 [![release](https://img.shields.io/github/release-pre/sukujgrg/oauth2c.svg)](https://github.com/sukujgrg/oauth2c/releases)
 
-`oauth2c` is a command-line tool for interacting with OAuth 2.0 authorization
-servers. It fetches access tokens using any grant type or client authentication
-method, and is compliant with almost all basic and advanced OAuth 2.0, OIDC,
-OIDF FAPI and JWT profiles.
+`oauth2c` is an educational command-line OAuth 2.0 / OpenID Connect client.
+It runs real grants against a real authorization server and prints the
+protocol on stderr so you can see what was sent, what came back, which
+checks passed or failed, and what the tokens contain.
 
-This is a fork of [cloudentity/oauth2c](https://github.com/cloudentity/oauth2c),
-maintained independently for other use cases. oauth2c was created by Cloudentity;
-this fork exists thanks to their work.
+Printing raw tokens, client secrets, JWTs, and request parameters is
+intentional. This is a teaching tool, not a production client. Do not
+point it at credentials you cannot afford to leak into a terminal.
+
+Stdout is still machine-readable token JSON. `--silent` discards the
+stderr trace so scripts get only that JSON.
+
+This is a fork of [cloudentity/oauth2c](https://github.com/cloudentity/oauth2c).
+oauth2c was created by Cloudentity; this fork exists thanks to their work.
 
 ## Features
 
@@ -146,8 +152,9 @@ HTTP server which acts as a client application and waits for a callback.
 > **Note**: To make browser flows work add `http://localhost:9876/callback` as a
 > redirect URL to your client.
 
-`oauth2c` prints all the requests it made to obtain an access token. If you want
-to integrate it with CI/CD pipeline use the `--silent` flag.
+stderr is the lesson: requests, responses, decoded tokens, and checks.
+That dump is intentional. Use `--silent` when you only want the token JSON
+on stdout (for example in a script).
 
 ## Examples
 

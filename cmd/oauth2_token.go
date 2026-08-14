@@ -47,16 +47,19 @@ func (c *OAuth2Cmd) tokenEndpointFlow(
 		hc,
 		requestTokenOpts...,
 	); err != nil {
-		LogRequestAndResponseln(tokenRequest, err)
+		LogRequestAndResponse(tokenRequest, err)
 		return err
 	}
 
 	LogAssertion(tokenRequest, "assertion")
 	LogAssertion(tokenRequest, "client_assertion")
 	LogSubjectTokenAndActorToken(tokenRequest)
-	LogAuthMethod(clientConfig)
+	CheckMTLS(tokenRequest)
 	LogRequestAndResponse(tokenRequest, tokenResponse)
-	LogTokenPayloadln(tokenResponse)
+	LogTokens(tokenResponse)
+	if err = CheckIDToken("", "", tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
+		return err
+	}
 
 	c.PrintResult(tokenResponse)
 

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -19,31 +18,31 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 	)
 
 	if authorizationRequest, authorizationResponse, err = oauth2.RequestDeviceAuthorization(context.Background(), clientConfig, serverConfig, hc); err != nil {
-		LogRequestAndResponseln(tokenRequest, err)
+		LogRequestAndResponse(authorizationRequest, err)
 		return err
 	}
 
 	LogRequestAndResponse(authorizationRequest, authorizationResponse)
+	LogNonce(authorizationRequest)
 
 	verificationUri := authorizationResponse.VerificationURI
 	if authorizationResponse.VerificationURIComplete != nil {
 		verificationUri = *authorizationResponse.VerificationURIComplete
 	}
 
-	LogAuthURL(verificationUri, clientConfig.NoBrowser)
+	LogURL("verification_url", verificationUri, clientConfig.NoBrowser)
 
-	LogWaiting("token")
+	LogWaiting("device_authorization")
 
-	interval := 5 * time.Second
+	interval := oauth2.DeviceDefaultPollInterval
 	if authorizationResponse.Interval != nil {
 		interval = time.Duration(*authorizationResponse.Interval) * time.Second
 	}
 	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	done := make(chan error)
 
 	go func() {
-		var oauth2Error *oauth2.Error
-
 		defer close(done)
 
 		for {
@@ -58,19 +57,21 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 					hc,
 					oauth2.WithDeviceCode(authorizationResponse.DeviceCode),
 				); err != nil {
-					if errors.As(err, &oauth2Error) {
-						switch oauth2Error.ErrorCode {
-						case oauth2.ErrAuthorizationPending, oauth2.ErrSlowDown:
-							continue
+					next, retry := oauth2.DevicePollInterval(interval, err)
+					if retry {
+						if next != interval {
+							interval = next
+							ticker.Reset(interval)
+							CheckDeviceSlowDown(oauth2.ErrSlowDown, interval)
 						}
+						continue
 					}
 
 					done <- err
-
-					return
-				} else {
 					return
 				}
+
+				return
 			}
 		}
 	}()
@@ -78,14 +79,14 @@ func (c *OAuth2Cmd) DeviceGrantFlow(clientConfig oauth2.ClientConfig, serverConf
 	err = <-done
 
 	if err != nil {
-		LogRequestAndResponseln(tokenRequest, err)
+		LogRequestAndResponse(tokenRequest, err)
 		return err
 	}
 
-	LogAuthMethod(clientConfig)
+	CheckMTLS(tokenRequest)
 	LogRequestAndResponse(tokenRequest, tokenResponse)
-	LogTokenPayloadln(tokenResponse)
-	if err = CheckNonce(authorizationRequest.Nonce, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
+	LogTokens(tokenResponse)
+	if err = CheckIDToken(authorizationRequest.Nonce, authorizationRequest.NonceSource, tokenResponse.IDToken, clientConfig, serverConfig, hc); err != nil {
 		return err
 	}
 
