@@ -6,6 +6,8 @@ builds:
   - env:
       - CGO_ENABLED=0
       - GOEXPERIMENT=jsonv2
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
     goos:
       - linux
       - windows
@@ -25,10 +27,13 @@ archives:
 checksum:
   name_template: 'checksums.txt'
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 changelog:
   sort: asc
   filters:
     exclude:
       - '^docs:'
       - '^test:'
+      - '^Merge pull request'
+release:
+  name_template: 'v{{.Version}}'

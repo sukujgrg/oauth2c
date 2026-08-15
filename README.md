@@ -36,7 +36,7 @@ oauth2c was created by Cloudentity; this fork exists thanks to their work.
 
 ## Installation
 
-Clone and install:
+From source:
 
 ```sh
 git clone https://github.com/sukujgrg/oauth2c.git
@@ -45,9 +45,13 @@ make install
 ```
 
 `make` sets `GOEXPERIMENT=jsonv2` so the experimental `encoding/json/v2` package
-is available.
+is available, and stamps `oauth2c version` from the current git tag.
 
-You can also download a pre-built binary from the [releases page].
+```sh
+GOEXPERIMENT=jsonv2 go install github.com/sukujgrg/oauth2c@v1.0.0
+```
+
+Pre-built binaries are on the [releases page].
 
 [releases page]: https://github.com/sukujgrg/oauth2c/releases
 
