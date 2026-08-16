@@ -73,3 +73,53 @@ func (tc *CommandTestCase) GetDeps(t *testing.T) map[string]string {
 
 	return deps
 }
+
+func TestRejectEmptyFlags(t *testing.T) {
+	t.Run("client-id empty", func(t *testing.T) {
+		cmd := NewOAuth2Cmd("master", "none", "unknown")
+		noErr(t, cmd.ParseFlags([]string{"--client-id", ""}))
+		err := rejectEmptyFlags(cmd.Command)
+		isErr(t, err)
+		contains(t, err.Error(), "--client-id is empty")
+	})
+
+	t.Run("client-id whitespace", func(t *testing.T) {
+		cmd := NewOAuth2Cmd("master", "none", "unknown")
+		noErr(t, cmd.ParseFlags([]string{"--client-id", "   "}))
+		err := rejectEmptyFlags(cmd.Command)
+		isErr(t, err)
+		contains(t, err.Error(), "--client-id is empty")
+	})
+
+	t.Run("omitted client-id is ok", func(t *testing.T) {
+		cmd := NewOAuth2Cmd("master", "none", "unknown")
+		noErr(t, cmd.ParseFlags([]string{"--grant-type", "client_credentials"}))
+		noErr(t, rejectEmptyFlags(cmd.Command))
+	})
+
+	t.Run("audience empty value", func(t *testing.T) {
+		cmd := NewOAuth2Cmd("master", "none", "unknown")
+		noErr(t, cmd.ParseFlags([]string{"--audience", ""}))
+		err := rejectEmptyFlags(cmd.Command)
+		isErr(t, err)
+		contains(t, err.Error(), "--audience is empty")
+	})
+
+	t.Run("scopes mixed empty", func(t *testing.T) {
+		cmd := NewOAuth2Cmd("master", "none", "unknown")
+		noErr(t, cmd.ParseFlags([]string{"--scopes", "openid,"}))
+		err := rejectEmptyFlags(cmd.Command)
+		isErr(t, err)
+		contains(t, err.Error(), "--scopes has an empty value")
+	})
+
+	t.Run("populated flags pass", func(t *testing.T) {
+		cmd := NewOAuth2Cmd("master", "none", "unknown")
+		noErr(t, cmd.ParseFlags([]string{
+			"--client-id", "client",
+			"--client-secret", "secret",
+			"--audience", "https://api.example",
+		}))
+		noErr(t, rejectEmptyFlags(cmd.Command))
+	})
+}

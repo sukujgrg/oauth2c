@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"crypto/x509"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/url"
@@ -20,9 +21,9 @@ func TestLogToken(t *testing.T) {
 
 		LogTokens(oauth2.TokenResponse{AccessToken: "opaque-access-token"})
 
-		contains(t, output.String(), "access_token: (opaque)")
-		notContains(t, output.String(), "ERROR")
-		notContains(t, output.String(), "compact JWS")
+		events := parseTrace(t, output)
+		eq(t, len(events), 1)
+		eq(t, events[0]["access_token"], "(opaque)")
 	})
 
 	t.Run("signed JWT", func(t *testing.T) {
@@ -41,14 +42,15 @@ func TestLogToken(t *testing.T) {
 
 		LogToken("access_token", token)
 
-		contains(t, output.String(), "access_token:")
-		contains(t, output.String(), "  sub: user")
-		contains(t, output.String(), "  exp: 1786775334")
-		contains(t, output.String(), "  iat: 1786739334")
+		events := parseTrace(t, output)
+		eq(t, len(events), 1)
+		claims, ok := events[0]["access_token"].(map[string]any)
+		isTrue(t, ok)
+		eq(t, claims["sub"], "user")
+		eq(t, claims["exp"], float64(1786775334))
+		eq(t, claims["iat"], float64(1786739334))
 		notContains(t, output.String(), "e+09")
 		notContains(t, output.String(), "(opaque)")
-		notContains(t, output.String(), "{")
-		notContains(t, output.String(), `"sub"`)
 	})
 
 	t.Run("jwe token", func(t *testing.T) {
@@ -70,9 +72,10 @@ func TestLogToken(t *testing.T) {
 
 		LogToken("access_token", token)
 
-		contains(t, output.String(), "access_token: (jwe)")
+		events := parseTrace(t, output)
+		eq(t, len(events), 1)
+		eq(t, events[0]["access_token"], "(jwe)")
 		notContains(t, output.String(), "(opaque)")
-		notContains(t, output.String(), `"sub"`)
 	})
 }
 
@@ -84,10 +87,10 @@ func TestLogSubjectTokenAndActorTokenWithOpaqueTokens(t *testing.T) {
 		"actor_token":   {"opaque-actor-token"},
 	}})
 
-	contains(t, output.String(), "subject_token: (opaque)")
-	contains(t, output.String(), "actor_token: (opaque)")
-	notContains(t, output.String(), "ERROR")
-	notContains(t, output.String(), "compact JWS")
+	events := parseTrace(t, output)
+	eq(t, len(events), 2)
+	eq(t, events[0]["subject_token"], "(opaque)")
+	eq(t, events[1]["actor_token"], "(opaque)")
 }
 
 func TestLogInput(t *testing.T) {
@@ -106,22 +109,20 @@ func TestLogInput(t *testing.T) {
 		ClientID:     "client",
 	})
 
-	got := output.String()
-	eq(t, got, strings.Join([]string{
-		"input:",
-		"  issuer_url: https://example.com",
-		"  client_id: client",
-		"  grant_type: authorization_code",
-		"  auth_method: none",
-		"  response_types: [code]",
-		"  scopes: [openid, email]",
-		"  resource: ['https://api.example']",
-		"  pkce: true",
-		"  par: true",
-		"  nonce: n-0S6_WzA2Mj",
-		"",
-		"",
-	}, "\n"))
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	input, ok := events[0]["input"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, input["issuer_url"], "https://example.com")
+	eq(t, input["client_id"], "client")
+	eq(t, input["grant_type"], "authorization_code")
+	eq(t, input["auth_method"], "none")
+	eq(t, input["response_types"], []any{"code"})
+	eq(t, input["scopes"], []any{"openid", "email"})
+	eq(t, input["resource"], []any{"https://api.example"})
+	eq(t, input["pkce"], true)
+	eq(t, input["par"], true)
+	eq(t, input["nonce"], "n-0S6_WzA2Mj")
 }
 
 func TestLogRequest(t *testing.T) {
@@ -134,15 +135,16 @@ func TestLogRequest(t *testing.T) {
 		URL:    u,
 	})
 
-	got := output.String()
-	contains(t, got, "request:")
-	contains(t, got, "  method: GET")
-	contains(t, got, "  url: https://example.com/authorize")
-	contains(t, got, "  client_id: abc")
-	contains(t, got, "  scope: openid email")
-	notContains(t, got, "Query params:")
-	notContains(t, got, "Headers:")
-	notContains(t, got, "Form post:")
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	request, ok := events[0]["request"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, request["method"], "GET")
+	eq(t, request["url"], "https://example.com/authorize")
+	eq(t, request["client_id"], "abc")
+	eq(t, request["scope"], "openid email")
+	_, nested := request["params"]
+	eq(t, nested, false)
 }
 
 func TestLogRequestRedactsBasicAuth(t *testing.T) {
@@ -160,7 +162,7 @@ func TestLogRequestRedactsBasicAuth(t *testing.T) {
 	})
 
 	got := output.String()
-	contains(t, got, "Authorization: Basic BASE64(client_id:client_secret)")
+	contains(t, got, `"Authorization":"Basic BASE64(client_id:client_secret)"`)
 	notContains(t, got, "dXNlcjpwYXNz")
 }
 
@@ -174,12 +176,16 @@ func TestLogRequestAndResponseUsesJSONFieldNames(t *testing.T) {
 		URL:    u,
 	}, oauth2.TokenResponse{TokenType: "Bearer", AccessToken: "tok"})
 
-	got := output.String()
-	contains(t, got, "  response:")
-	contains(t, got, "    token_type: Bearer")
-	contains(t, got, "    access_token: tok")
-	notContains(t, got, "TokenType")
-	notContains(t, got, "AccessToken")
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	request, ok := events[0]["request"].(map[string]any)
+	isTrue(t, ok)
+	response, ok := request["response"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, response["token_type"], "Bearer")
+	eq(t, response["access_token"], "tok")
+	notContains(t, output.String(), "TokenType")
+	notContains(t, output.String(), "AccessToken")
 }
 
 func TestLogAssertion(t *testing.T) {
@@ -194,15 +200,18 @@ func TestLogAssertion(t *testing.T) {
 
 	LogAssertion(oauth2.Request{Form: url.Values{"assertion": {token}}}, "assertion")
 
-	got := output.String()
-	contains(t, got, "assertion:")
-	contains(t, got, "  encoding: JWT-HS256")
-	contains(t, got, "  iss: client")
-	contains(t, got, "  sub: client")
-	notContains(t, got, "assertion: JWT")
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	assertion, ok := events[0]["assertion"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, assertion["encoding"], "JWT-HS256")
+	eq(t, assertion["iss"], "client")
+	eq(t, assertion["sub"], "client")
+	_, nested := assertion["claims"]
+	eq(t, nested, false)
 }
 
-func TestLogRequestAndResponseIndentsResponse(t *testing.T) {
+func TestLogRequestAndResponseNestsResponse(t *testing.T) {
 	output := captureLogOutput(t)
 	u, err := url.Parse("https://example.com/oauth/token")
 	noErr(t, err)
@@ -213,16 +222,18 @@ func TestLogRequestAndResponseIndentsResponse(t *testing.T) {
 		Form:   url.Values{"grant_type": {"client_credentials"}},
 	}, map[string]any{"token_type": "Bearer"})
 
-	got := output.String()
-	contains(t, got, "request:")
-	contains(t, got, "  method: POST")
-	contains(t, got, "  url: https://example.com/oauth/token")
-	contains(t, got, "  grant_type: client_credentials")
-	contains(t, got, "  response:")
-	contains(t, got, "    token_type: Bearer")
-	notContains(t, got, "\nresponse:")
-	notContains(t, got, "{")
-	notContains(t, got, `"token_type"`)
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	request, ok := events[0]["request"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, request["method"], "POST")
+	eq(t, request["url"], "https://example.com/oauth/token")
+	eq(t, request["grant_type"], "client_credentials")
+	response, ok := request["response"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, response["token_type"], "Bearer")
+	_, topLevel := events[0]["response"]
+	eq(t, topLevel, false)
 }
 
 func TestLogNonce(t *testing.T) {
@@ -233,15 +244,14 @@ func TestLogNonce(t *testing.T) {
 		NonceSource: oauth2.NonceSourceGenerated,
 	})
 
-	eq(t, output.String(), strings.Join([]string{
-		"nonce:",
-		"  spec: OpenID Connect Core",
-		"  purpose: replay protection",
-		"  source: generated",
-		"  value: n-0S6_WzA2Mj",
-		"",
-		"",
-	}, "\n"))
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	nonce, ok := events[0]["nonce"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, nonce["spec"], "OpenID Connect Core")
+	eq(t, nonce["purpose"], "replay protection")
+	eq(t, nonce["source"], "generated")
+	eq(t, nonce["value"], "n-0S6_WzA2Mj")
 }
 
 func TestLogPKCE(t *testing.T) {
@@ -249,15 +259,14 @@ func TestLogPKCE(t *testing.T) {
 
 	LogPKCE("verifier")
 
-	eq(t, output.String(), strings.Join([]string{
-		"pkce:",
-		"  spec: RFC 7636",
-		"  purpose: authorization code interception protection",
-		"  code_verifier: verifier",
-		"  code_challenge: S256(code_verifier)",
-		"",
-		"",
-	}, "\n"))
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	pkce, ok := events[0]["pkce"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, pkce["spec"], "RFC 7636")
+	eq(t, pkce["purpose"], "authorization code interception protection")
+	eq(t, pkce["code_verifier"], "verifier")
+	eq(t, pkce["code_challenge"], "S256(code_verifier)")
 }
 
 func TestLogSectionSpacing(t *testing.T) {
@@ -284,40 +293,22 @@ func TestLogSectionSpacing(t *testing.T) {
 		IDToken:     "opaque-id-token",
 	})
 
-	got := output.String()
-	eq(t, got, strings.Join([]string{
-		"input:",
-		"  issuer_url: https://example.com",
-		"  client_id: client",
-		"  grant_type: authorization_code",
-		"",
-		"request:",
-		"  method: GET",
-		"  url: https://example.com/authorize",
-		"  client_id: client",
-		"",
-		"pkce:",
-		"  spec: RFC 7636",
-		"  purpose: authorization code interception protection",
-		"  code_verifier: verifier",
-		"  code_challenge: S256(code_verifier)",
-		"",
-		"authorization_url: https://example.com/authorize?client_id=client",
-		"",
-		"waiting: authorization_response",
-		"",
-		"request:",
-		"  method: GET",
-		"  url: /callback",
-		"  code: abc",
-		"",
-		"access_token: (opaque)",
-		"",
-		"id_token: (opaque)",
-		"",
-		"",
-	}, "\n"))
-	notContains(t, got, "\n\n\n")
+	events := parseTrace(t, output)
+	eq(t, len(events), 8)
+	_, ok := events[0]["input"]
+	isTrue(t, ok)
+	_, ok = events[1]["request"]
+	isTrue(t, ok)
+	_, ok = events[2]["pkce"]
+	isTrue(t, ok)
+	eq(t, events[3]["authorization_url"], "https://example.com/authorize?client_id=client")
+	eq(t, events[4]["waiting"], "authorization_response")
+	request, ok := events[5]["request"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, request["code"], "abc")
+	eq(t, events[6]["access_token"], "(opaque)")
+	eq(t, events[7]["id_token"], "(opaque)")
+	notContains(t, output.String(), "\n\n")
 }
 
 func TestCheckState(t *testing.T) {
@@ -327,13 +318,12 @@ func TestCheckState(t *testing.T) {
 		err := CheckState("csrf-state", "csrf-state")
 		noErr(t, err)
 
-		got := output.String()
-		contains(t, got, "check state:")
-		contains(t, got, "  spec: RFC 6749")
-		contains(t, got, "  purpose: CSRF protection")
-		contains(t, got, "  expected: csrf-state")
-		contains(t, got, "  received: csrf-state")
-		contains(t, got, "  result: pass")
+		check := parseCheck(t, output, "check state")
+		eq(t, check["spec"], "RFC 6749")
+		eq(t, check["purpose"], "CSRF protection")
+		eq(t, check["expected"], "csrf-state")
+		eq(t, check["received"], "csrf-state")
+		eq(t, check["result"], "pass")
 	})
 
 	t.Run("mismatch", func(t *testing.T) {
@@ -342,7 +332,7 @@ func TestCheckState(t *testing.T) {
 		err := CheckState("csrf-state", "attacker")
 		isErr(t, err)
 		contains(t, err.Error(), "state does not match")
-		contains(t, output.String(), "  result: fail")
+		eq(t, parseCheck(t, output, "check state")["result"], "fail")
 	})
 }
 
@@ -352,14 +342,13 @@ func TestCheckIDTokenLogsNonce(t *testing.T) {
 	err := CheckIDToken("n-0S6_WzA2Mj", oauth2.NonceSourceCustom, "", oauth2.ClientConfig{}, oauth2.ServerConfig{}, nil)
 	noErr(t, err)
 
-	got := output.String()
-	contains(t, got, "check id_token.nonce:")
-	contains(t, got, "  spec: OpenID Connect Core")
-	contains(t, got, "  purpose: replay protection")
-	contains(t, got, "  source: custom")
-	contains(t, got, "  expected: n-0S6_WzA2Mj")
-	contains(t, got, "  received: (no id_token)")
-	contains(t, got, "  result: skip")
+	check := parseCheck(t, output, "check id_token.nonce")
+	eq(t, check["spec"], "OpenID Connect Core")
+	eq(t, check["purpose"], "replay protection")
+	eq(t, check["source"], "custom")
+	eq(t, check["expected"], "n-0S6_WzA2Mj")
+	eq(t, check["received"], "(no id_token)")
+	eq(t, check["result"], "skip")
 }
 
 func TestCheckIDTokenMissingNonceContinues(t *testing.T) {
@@ -384,11 +373,11 @@ func TestCheckIDTokenMissingNonceContinues(t *testing.T) {
 	noErr(t, err)
 
 	got := output.String()
-	contains(t, got, "check id_token.nonce:")
-	contains(t, got, "  source: generated")
-	contains(t, got, "  received: (missing)")
-	contains(t, got, "  result: fail")
 	contains(t, got, "authorization server did not echo nonce")
+	check := parseCheck(t, output, "check id_token.nonce")
+	eq(t, check["source"], "generated")
+	eq(t, check["received"], "(missing)")
+	eq(t, check["result"], "fail")
 }
 
 func TestCheckDeviceSlowDown(t *testing.T) {
@@ -396,12 +385,11 @@ func TestCheckDeviceSlowDown(t *testing.T) {
 
 	CheckDeviceSlowDown(oauth2.ErrSlowDown, 10*time.Second)
 
-	got := output.String()
-	contains(t, got, "check device.slow_down:")
-	contains(t, got, "  spec: RFC 8628")
-	contains(t, got, "  received: slow_down")
-	contains(t, got, "  detail: next interval 10s")
-	contains(t, got, "  result: pass")
+	check := parseCheck(t, output, "check device.slow_down")
+	eq(t, check["spec"], "RFC 8628")
+	eq(t, check["received"], "slow_down")
+	eq(t, check["detail"], "next interval 10s")
+	eq(t, check["result"], "pass")
 }
 
 func TestCheckMTLS(t *testing.T) {
@@ -412,11 +400,10 @@ func TestCheckMTLS(t *testing.T) {
 			URL:  mustParseURL(t, "https://as.example.com/token"),
 		})
 
-		got := output.String()
-		contains(t, got, "check mtls:")
-		contains(t, got, "  spec: RFC 8705")
-		contains(t, got, "conventional endpoint (no mtls alias advertised): https://as.example.com/token")
-		contains(t, got, "  result: pass")
+		check := parseCheck(t, output, "check mtls")
+		eq(t, check["spec"], "RFC 8705")
+		eq(t, check["received"], "conventional endpoint (no mtls alias advertised): https://as.example.com/token")
+		eq(t, check["result"], "pass")
 	})
 
 	t.Run("no certificate is silent", func(t *testing.T) {
@@ -453,6 +440,52 @@ func TestSilentDiscardsTrace(t *testing.T) {
 	eq(t, output.String(), "")
 }
 
+func TestJSONTraceLines(t *testing.T) {
+	output := captureLogOutput(t)
+
+	LogInput(oauth2.ClientConfig{
+		IssuerURL: "https://example.com",
+		ClientID:  "client",
+		GrantType: "client_credentials",
+	})
+	LogRequest(oauth2.Request{
+		Method: "POST",
+		URL:    mustParseURL(t, "https://example.com/oauth/token"),
+		Form:   url.Values{"grant_type": {"client_credentials"}},
+	})
+	LogWaiting("authorization_response")
+	LogURL("authorization_url", "https://example.com/authorize", true)
+	LogError(errors.New("boom"))
+	_ = CheckState("csrf-state", "csrf-state")
+
+	got := output.String()
+	notContains(t, got, "---")
+	notContains(t, got, "issuer_url:")
+
+	events := parseTrace(t, output)
+	eq(t, len(events), 6)
+
+	input, ok := events[0]["input"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, input["issuer_url"], "https://example.com")
+	eq(t, input["client_id"], "client")
+
+	request, ok := events[1]["request"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, request["method"], "POST")
+	eq(t, request["grant_type"], "client_credentials")
+	_, nested := request["params"]
+	eq(t, nested, false)
+
+	eq(t, events[2]["waiting"], "authorization_response")
+	eq(t, events[3]["authorization_url"], "https://example.com/authorize")
+	eq(t, events[4]["error"], "boom")
+
+	check, ok := events[5]["check state"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, check["result"], "pass")
+}
+
 func mustParseURL(t *testing.T, raw string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(raw)
@@ -471,4 +504,30 @@ func captureLogOutput(t *testing.T) *bytes.Buffer {
 	})
 
 	return output
+}
+
+func parseTrace(t *testing.T, output *bytes.Buffer) []map[string]any {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	events := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var event map[string]any
+		noErr(t, json.Unmarshal([]byte(line), &event))
+		events = append(events, event)
+	}
+	return events
+}
+
+func parseCheck(t *testing.T, output *bytes.Buffer, name string) map[string]any {
+	t.Helper()
+	for _, event := range parseTrace(t, output) {
+		if check, ok := event[name].(map[string]any); ok {
+			return check
+		}
+	}
+	t.Fatalf("missing %q in %s", name, output.String())
+	return nil
 }

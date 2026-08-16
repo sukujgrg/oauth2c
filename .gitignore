@@ -1,4 +1,5 @@
-oauth2c
+# Built binary at repo root (not skills/oauth2c/)
+/oauth2c
 
 # Binaries for programs and plugins
 *.exe

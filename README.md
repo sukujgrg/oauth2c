@@ -4,20 +4,44 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 [![release](https://img.shields.io/github/release-pre/sukujgrg/oauth2c.svg)](https://github.com/sukujgrg/oauth2c/releases)
 
-`oauth2c` is an educational command-line OAuth 2.0 / OpenID Connect client.
-It runs real grants against a real authorization server and prints the
-protocol on stderr so you can see what was sent, what came back, which
-checks passed or failed, and what the tokens contain.
+`oauth2c` is a flag-driven OAuth 2.0 / OpenID Connect client for testing
+OAuth apps. There are no interactive prompts: every grant is configured
+from flags. LLM agents and scripts can drive a real authorization server,
+read token JSON on stdout, and read a JSON-lines protocol trace on
+stderr: what was sent, what came back, which checks passed or failed,
+and what the tokens contain. If you want YAML, install
+[yq](https://github.com/mikefarah/yq) (`brew install yq`) and pipe
+stderr through `yq -p json -o yaml`.
 
 Printing raw tokens, client secrets, JWTs, and request parameters is
-intentional. This is a teaching tool, not a production client. Do not
-point it at credentials you cannot afford to leak into a terminal.
+intentional so a model (or a human) can diagnose the grant. This is not a
+production client. Do not point it at credentials you cannot afford to
+leak into a log.
 
-Stdout is still machine-readable token JSON. `--silent` discards the
-stderr trace so scripts get only that JSON.
+`--silent` discards the stderr trace so callers get only the token JSON.
+
+Browser grants (authorization code, hybrid, implicit, device) still need a
+user at the authorization server. `--no-browser` only skips opening the
+URL; the process still waits for the callback or device approval. Client
+credentials, password, refresh token, JWT bearer, and token exchange do
+not wait on a user.
+
+Agents: install [skills/oauth2c](skills/oauth2c/SKILL.md) as a skill
+(copy that directory into the agent's skills path).
+
+## Difference from cloudentity/oauth2c
 
 This is a fork of [cloudentity/oauth2c](https://github.com/cloudentity/oauth2c).
-oauth2c was created by Cloudentity; this fork exists thanks to their work.
+Cloudentity built the original; this repo is a near-total rewrite.
+
+**cloudentity/oauth2c** is a user-friendly client for fetching access tokens
+(interactive prompts, TUI, Homebrew). **This fork** drops the TUI so an LLM
+or script can drive every grant from flags and parse a JSON-lines trace of
+the protocol. Demos use an Auth0 tenant you control.
+
+Grant types and client authentication methods are the same. The Go module and
+version line are new (`github.com/sukujgrg/oauth2c` `v1.0.0`), not a
+continuation of upstream `v1.20.x`.
 
 ## Features
 
@@ -36,7 +60,28 @@ oauth2c was created by Cloudentity; this fork exists thanks to their work.
 
 ## Installation
 
-From source:
+Go is not required. The installer picks the binary for your machine.
+
+macOS / Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.ps1 | iex
+```
+
+Pin a version with `OAUTH2C_VERSION=v1.0.0`. Change the install directory
+with `OAUTH2C_BINDIR`.
+
+Or download a binary from the [releases page].
+
+[releases page]: https://github.com/sukujgrg/oauth2c/releases
+
+From source (needs Go):
 
 ```sh
 git clone https://github.com/sukujgrg/oauth2c.git
@@ -50,10 +95,6 @@ is available, and stamps `oauth2c version` from the current git tag.
 ```sh
 GOEXPERIMENT=jsonv2 go install github.com/sukujgrg/oauth2c@v1.0.0
 ```
-
-Pre-built binaries are on the [releases page].
-
-[releases page]: https://github.com/sukujgrg/oauth2c/releases
 
 ## Demo with Auth0
 
@@ -123,7 +164,7 @@ oauth2c [issuer url] [flags]
       --max-age string                                      maximum authentication age in seconds
       --mtls-pushed-authorization-request-endpoint string   server's mtls pushed authorization request endpoint
       --mtls-token-endpoint string                          server's mtls token endpoint
-      --no-browser                                          do not open browser
+      --no-browser                                          do not open a browser; still waits for the callback or device approval
       --nonce string                                        openid connect nonce
       --par                                                 enable pushed authorization requests (PAR)
       --password string                                     resource owner password credentials grant flow password
@@ -140,7 +181,7 @@ oauth2c [issuer url] [flags]
       --response-types strings                              response type
       --scopes strings                                      requested scopes
       --signing-key string                                  path or url to signing key in jwks format
-  -s, --silent                                              silent mode
+  -s, --silent                                              print only the token JSON on stdout
       --subject-token string                                third party token
       --subject-token-type string                           third party token type
       --tls-cert string                                     path to tls cert pem file
@@ -156,9 +197,11 @@ HTTP server which acts as a client application and waits for a callback.
 > **Note**: To make browser flows work add `http://localhost:9876/callback` as a
 > redirect URL to your client.
 
-stderr is the lesson: requests, responses, decoded tokens, and checks.
-That dump is intentional. Use `--silent` when you only want the token JSON
-on stdout (for example in a script).
+stderr is the protocol trace: requests, responses, decoded tokens, and
+checks, as JSON lines (one object per line). Use `--silent` when you
+only want the token JSON on stdout. If you want YAML, install
+[yq](https://github.com/mikefarah/yq) (`brew install yq`) and pipe
+stderr through `yq -p json -o yaml`.
 
 ## Examples
 
