@@ -124,6 +124,13 @@ func TestRejectEmptyFlags(t *testing.T) {
 	})
 }
 
+func TestRedirectURIAlias(t *testing.T) {
+	cmd := NewOAuth2Cmd("master", "none", "unknown")
+	noErr(t, cmd.ParseFlags([]string{"--redirect-uri", "http://127.0.0.1:8400/oauth/callback"}))
+	eq(t, cmd.Flag("redirect-url").Value.String(), "http://127.0.0.1:8400/oauth/callback")
+	eq(t, cmd.Flag("redirect-uri").Value.String(), "http://127.0.0.1:8400/oauth/callback")
+}
+
 func TestCobraErrorsStayOffStderr(t *testing.T) {
 	cases := []struct {
 		name string

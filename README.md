@@ -27,8 +27,8 @@ URL; the process still waits for the callback or device approval. Client
 credentials, password, refresh token, JWT bearer, and token exchange do
 not wait on a user.
 
-Agents: install [skills/oauth2c](skills/oauth2c/SKILL.md) as a skill
-(copy that directory into the agent's skills path).
+Agents: install the [oauth2c skill](skills/oauth2c/SKILL.md) with `gh skill`
+(see [Installation](#installation)).
 
 ## Difference from cloudentity/oauth2c
 
@@ -66,17 +66,18 @@ Go is not required. The installer picks the binary for your machine.
 macOS / Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.sh | sh
+OAUTH2C_VERSION=v2.1.0 curl -fsSL https://raw.githubusercontent.com/sukujgrg/oauth2c/v2.1.0/scripts/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.ps1 | iex
+$env:OAUTH2C_VERSION = "v2.1.0"
+irm https://raw.githubusercontent.com/sukujgrg/oauth2c/v2.1.0/scripts/install.ps1 | iex
 ```
 
-Pin a version with `OAUTH2C_VERSION=v2.0.1`. Change the install directory
-with `OAUTH2C_BINDIR`.
+Omit `OAUTH2C_VERSION` to install the latest release. Change the install
+directory with `OAUTH2C_BINDIR`.
 
 Or download a binary from the [releases page].
 
@@ -94,8 +95,17 @@ make install
 is available, and stamps `oauth2c version` from the current git tag.
 
 ```sh
-GOEXPERIMENT=jsonv2 go install github.com/sukujgrg/oauth2c@v2.0.1
+GOEXPERIMENT=jsonv2 go install github.com/sukujgrg/oauth2c@v2.1.0
 ```
+
+Agent skill (GitHub CLI v2.90+):
+
+```sh
+gh skill install sukujgrg/oauth2c oauth2c@v2.1.0
+```
+
+Add `--agent cursor` (or `claude-code`, `codex`, …) if you are not using
+GitHub Copilot. `--scope user` installs it for every repo.
 
 ## Demo with Auth0
 
@@ -140,12 +150,12 @@ oauth2c [issuer url] [flags]
       --actor-token string                                  acting party token
       --actor-token-type string                             acting party token type
       --assertion string                                    claims for jwt bearer assertion
-      --audience strings                                    requested audience
+      --audience strings                                    requested audience (access-token aud; not RFC 8707 resource)
       --auth-method string                                  token endpoint authentication method
       --authentication-code string                          authentication code used for passwordless authentication
       --authorization-endpoint string                       server's authorization endpoint
       --browser-timeout duration                            browser timeout (default 10m0s)
-      --callback-addr string                                callback server bind address (e.g., 0.0.0.0:8080)
+      --callback-addr string                                local callback bind address, e.g. 0.0.0.0:8080 (not redirect_uri)
       --callback-tls-cert string                            path to callback tls cert pem file
       --callback-tls-key string                             path to callback tls key pem file
       --claims string                                       use claims
@@ -166,15 +176,17 @@ oauth2c [issuer url] [flags]
       --mtls-pushed-authorization-request-endpoint string   server's mtls pushed authorization request endpoint
       --mtls-token-endpoint string                          server's mtls token endpoint
       --no-browser                                          do not open a browser; still waits for the callback or device approval
+      --no-origin                                           do not include an Origin header
       --nonce string                                        openid connect nonce
       --par                                                 enable pushed authorization requests (PAR)
       --password string                                     resource owner password credentials grant flow password
       --pkce                                                enable proof key for code exchange (PKCE)
-      --prompt strings                                      end-user authorization purpose
+      --prompt strings                                      OpenID Connect prompt (none, login, consent, select_account)
       --purpose string                                      string describing the purpose for obtaining End-User authorization
       --pushed-authorization-request-endpoint string        server's pushed authorization request endpoint
       --rar string                                          use rich authorization request (RAR)
-      --redirect-url string                                 client redirect url (default "http://localhost:9876/callback")
+      --redirect-uri string                                 alias of --redirect-url (default "http://localhost:9876/callback")
+      --redirect-url string                                 OAuth redirect_uri sent to the authorization server (alias --redirect-uri) (default "http://localhost:9876/callback")
       --refresh-token string                                refresh token
       --request-object                                      pass request parameters as jwt
       --resource strings                                    requested resource
@@ -199,12 +211,14 @@ HTTP server which acts as a client application and waits for a callback.
 > redirect URL to your client.
 
 stderr is JSON lines (one object per event): the protocol trace
-(requests, responses, decoded tokens, checks) and CLI failures
-(unknown flags, missing args, interrupt). `--help` stays human text on
-stdout. Use `--silent` when you only want the token JSON on stdout;
-`error` events still appear if the command fails. If you want YAML,
-install [yq](https://github.com/mikefarah/yq) (`brew install yq`) and
-pipe stderr through `yq -p json -o yaml`.
+(requests with nested `response.status` plus body, decoded tokens,
+checks) and CLI failures (unknown flags, missing args, interrupt).
+`error` events are objects (`error`, optional `status`,
+`error_description`). `--help` stays human text on stdout. Use
+`--silent` when you only want the token JSON on stdout; `error` events
+still appear if the command fails. If you want YAML, install
+[yq](https://github.com/mikefarah/yq) (`brew install yq`) and pipe
+stderr through `yq -p json -o yaml`.
 
 ## Examples
 

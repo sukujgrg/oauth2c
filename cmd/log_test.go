@@ -184,8 +184,62 @@ func TestLogRequestAndResponseUsesJSONFieldNames(t *testing.T) {
 	isTrue(t, ok)
 	eq(t, response["token_type"], "Bearer")
 	eq(t, response["access_token"], "tok")
+	_, hasStatus := response["status"]
+	eq(t, hasStatus, false)
 	notContains(t, output.String(), "TokenType")
 	notContains(t, output.String(), "AccessToken")
+}
+
+func TestLogRequestAndResponseIncludesHTTPStatus(t *testing.T) {
+	output := captureLogOutput(t)
+	u, err := url.Parse("https://example.com/oauth/token")
+	noErr(t, err)
+
+	LogRequestAndResponse(oauth2.Request{
+		Method:     "POST",
+		URL:        u,
+		Form:       url.Values{"grant_type": {"client_credentials"}},
+		StatusCode: http.StatusOK,
+	}, oauth2.TokenResponse{TokenType: "Bearer", AccessToken: "tok"})
+
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	request, ok := events[0]["request"].(map[string]any)
+	isTrue(t, ok)
+	response, ok := request["response"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, response["status"], float64(http.StatusOK))
+	eq(t, response["token_type"], "Bearer")
+	eq(t, response["access_token"], "tok")
+}
+
+func TestLogRequestAndResponseOAuthError(t *testing.T) {
+	output := captureLogOutput(t)
+	u, err := url.Parse("https://example.com/oauth/token")
+	noErr(t, err)
+
+	LogRequestAndResponse(oauth2.Request{
+		Method:     "POST",
+		URL:        u,
+		Form:       url.Values{"grant_type": {"client_credentials"}},
+		StatusCode: http.StatusUnauthorized,
+	}, &oauth2.Error{
+		StatusCode:  http.StatusUnauthorized,
+		ErrorCode:   "unauthorized_client",
+		Description: "Grant type not allowed",
+	})
+
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	request, ok := events[0]["request"].(map[string]any)
+	isTrue(t, ok)
+	response, ok := request["response"].(map[string]any)
+	isTrue(t, ok)
+	eq(t, response["status"], float64(http.StatusUnauthorized))
+	eq(t, response["error"], "unauthorized_client")
+	eq(t, response["error_description"], "Grant type not allowed")
+	_, topLevel := events[0]["response"]
+	eq(t, topLevel, false)
 }
 
 func TestLogAssertion(t *testing.T) {
@@ -439,7 +493,33 @@ func TestSilentDiscardsTrace(t *testing.T) {
 
 	events := parseTrace(t, output)
 	eq(t, len(events), 1)
-	eq(t, events[0]["error"], "boom")
+	eq(t, events[0]["error"], map[string]any{"error": "boom"})
+}
+
+func TestLogErrorObject(t *testing.T) {
+	t.Run("plain error", func(t *testing.T) {
+		output := captureLogOutput(t)
+		LogError(errors.New("Interrupted"))
+		events := parseTrace(t, output)
+		eq(t, len(events), 1)
+		eq(t, events[0]["error"], map[string]any{"error": "Interrupted"})
+	})
+
+	t.Run("oauth error", func(t *testing.T) {
+		output := captureLogOutput(t)
+		LogError(&oauth2.Error{
+			StatusCode:  http.StatusUnauthorized,
+			ErrorCode:   "unauthorized_client",
+			Description: "Grant type not allowed",
+		})
+		events := parseTrace(t, output)
+		eq(t, len(events), 1)
+		eq(t, events[0]["error"], map[string]any{
+			"status":            float64(http.StatusUnauthorized),
+			"error":             "unauthorized_client",
+			"error_description": "Grant type not allowed",
+		})
+	})
 }
 
 func TestJSONTraceLines(t *testing.T) {
@@ -481,7 +561,7 @@ func TestJSONTraceLines(t *testing.T) {
 
 	eq(t, events[2]["waiting"], "authorization_response")
 	eq(t, events[3]["authorization_url"], "https://example.com/authorize")
-	eq(t, events[4]["error"], "boom")
+	eq(t, events[4]["error"], map[string]any{"error": "boom"})
 
 	check, ok := events[5]["check state"].(map[string]any)
 	isTrue(t, ok)

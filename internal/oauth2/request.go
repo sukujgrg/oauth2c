@@ -27,6 +27,7 @@ type Request struct {
 	NonceSource   string
 	State         string
 	UsedMTLSAlias bool
+	StatusCode    int
 }
 
 const (

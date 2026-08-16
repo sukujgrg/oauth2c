@@ -33,7 +33,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd = &OAuth2Cmd{
 		Command: &cobra.Command{
 			Use:           "oauth2c [issuer url]",
-			Short:         "Flag-driven OAuth2 client for testing apps",
+			Short:         "Flag-driven OAuth 2.0 / OIDC client for testing apps",
 			Args:          cobra.ExactArgs(1),
 			SilenceUsage:  true,
 			SilenceErrors: true,
@@ -44,7 +44,8 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 
 	cmd.AddCommand(NewVersionCmd(version, commit, date))
 
-	cmd.PersistentFlags().StringVar(&cconfig.RedirectURL, "redirect-url", "http://localhost:9876/callback", "client redirect url")
+	cmd.PersistentFlags().StringVar(&cconfig.RedirectURL, "redirect-url", "http://localhost:9876/callback", "OAuth redirect_uri sent to the authorization server (alias --redirect-uri)")
+	cmd.PersistentFlags().StringVar(&cconfig.RedirectURL, "redirect-uri", "http://localhost:9876/callback", "alias of --redirect-url")
 	cmd.PersistentFlags().StringVar(&cconfig.ClientID, "client-id", "", "client identifier")
 	cmd.PersistentFlags().StringVar(&cconfig.ClientSecret, "client-secret", "", "client secret")
 	cmd.PersistentFlags().StringVar(&cconfig.GrantType, "grant-type", "", "grant type")
@@ -55,7 +56,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd.PersistentFlags().StringSliceVar(&cconfig.ResponseType, "response-types", []string{""}, "response type")
 	cmd.PersistentFlags().StringVar(&cconfig.ResponseMode, "response-mode", "", "response mode")
 	cmd.PersistentFlags().StringSliceVar(&cconfig.Scopes, "scopes", []string{}, "requested scopes")
-	cmd.PersistentFlags().StringSliceVar(&cconfig.Audience, "audience", []string{}, "requested audience")
+	cmd.PersistentFlags().StringSliceVar(&cconfig.Audience, "audience", []string{}, "requested audience (access-token aud; not RFC 8707 resource)")
 	cmd.PersistentFlags().StringSliceVar(&cconfig.Resource, "resource", []string{}, "requested resource")
 	cmd.PersistentFlags().BoolVar(&cconfig.PKCE, "pkce", false, "enable proof key for code exchange (PKCE)")
 	cmd.PersistentFlags().StringVar(&cconfig.Nonce, "nonce", "", "openid connect nonce")
@@ -77,7 +78,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd.PersistentFlags().StringVar(&cconfig.TLSRootCA, "tls-root-ca", "", "path to tls root ca pem file")
 	cmd.PersistentFlags().StringVar(&cconfig.CallbackTLSCert, "callback-tls-cert", "", "path to callback tls cert pem file")
 	cmd.PersistentFlags().StringVar(&cconfig.CallbackTLSKey, "callback-tls-key", "", "path to callback tls key pem file")
-	cmd.PersistentFlags().StringVar(&cconfig.CallbackAddr, "callback-addr", "", "callback server bind address (e.g., 0.0.0.0:8080)")
+	cmd.PersistentFlags().StringVar(&cconfig.CallbackAddr, "callback-addr", "", "local callback bind address, e.g. 0.0.0.0:8080 (not redirect_uri)")
 	cmd.PersistentFlags().DurationVar(&cconfig.HTTPTimeout, "http-timeout", time.Minute, "http client timeout")
 	cmd.PersistentFlags().DurationVar(&cconfig.BrowserTimeout, "browser-timeout", 10*time.Minute, "browser timeout")
 	cmd.PersistentFlags().BoolVar(&cconfig.Insecure, "insecure", false, "allow insecure connections")
@@ -88,7 +89,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd.PersistentFlags().StringVar(&cconfig.RAR, "rar", "", "use rich authorization request (RAR)")
 	cmd.PersistentFlags().StringSliceVar(&cconfig.ACRValues, "acr-values", []string{}, "ACR values")
 	cmd.PersistentFlags().StringVar(&cconfig.Purpose, "purpose", "", "string describing the purpose for obtaining End-User authorization")
-	cmd.PersistentFlags().StringSliceVar(&cconfig.Prompt, "prompt", []string{}, "end-user authorization purpose")
+	cmd.PersistentFlags().StringSliceVar(&cconfig.Prompt, "prompt", []string{}, "OpenID Connect prompt (none, login, consent, select_account)")
 	cmd.PersistentFlags().StringVar(&cconfig.MaxAge, "max-age", "", "maximum authentication age in seconds")
 	cmd.PersistentFlags().StringVar(&cconfig.AuthenticationCode, "authentication-code", "", "authentication code used for passwordless authentication")
 	cmd.PersistentFlags().BoolVar(&cconfig.NoOrigin, "no-origin", false, "do not include an Origin header")

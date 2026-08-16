@@ -72,6 +72,7 @@ func RequestDeviceAuthorization(ctx context.Context, cconfig ClientConfig, sconf
 	}
 
 	defer resp.Body.Close()
+	request.StatusCode = resp.StatusCode
 
 	if resp.StatusCode != http.StatusOK {
 		return request, response, ParseError(resp)
