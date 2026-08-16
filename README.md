@@ -74,7 +74,7 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.ps1 | iex
 ```
 
-Pin a version with `OAUTH2C_VERSION=v1.0.0`. Change the install directory
+Pin a version with `OAUTH2C_VERSION=v2.0.0`. Change the install directory
 with `OAUTH2C_BINDIR`.
 
 Or download a binary from the [releases page].
@@ -93,7 +93,7 @@ make install
 is available, and stamps `oauth2c version` from the current git tag.
 
 ```sh
-GOEXPERIMENT=jsonv2 go install github.com/sukujgrg/oauth2c@v1.0.0
+GOEXPERIMENT=jsonv2 go install github.com/sukujgrg/oauth2c@v2.0.0
 ```
 
 ## Demo with Auth0

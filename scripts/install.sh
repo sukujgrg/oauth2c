@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.sh | sh
 #
 # Optional:
-#   OAUTH2C_VERSION=v1.0.0   pin a release (default: latest)
+#   OAUTH2C_VERSION=v2.0.0   pin a release (default: latest)
 #   OAUTH2C_BINDIR=~/.local/bin   install directory (default: ~/.local/bin)
 set -eu
 

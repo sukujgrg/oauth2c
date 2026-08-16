@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.ps1 | iex
 #
 # Optional:
-#   $env:OAUTH2C_VERSION = "v1.0.0"   # pin a release (default: latest)
+#   $env:OAUTH2C_VERSION = "v2.0.0"   # pin a release (default: latest)
 #   $env:OAUTH2C_BINDIR = "$env:LOCALAPPDATA\oauth2c"  # install directory
 $ErrorActionPreference = "Stop"
 
