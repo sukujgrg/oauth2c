@@ -189,6 +189,7 @@ func RequestPAR(
 	}
 
 	defer resp.Body.Close()
+	parRequest.StatusCode = resp.StatusCode
 
 	if resp.StatusCode != http.StatusCreated {
 		return parRequest, parResponse, authorizeRequest, codeVerifier, ParseError(resp)
@@ -659,6 +660,7 @@ func RequestToken(
 	}
 
 	defer resp.Body.Close()
+	request.StatusCode = resp.StatusCode
 
 	if resp.StatusCode != http.StatusOK {
 		return request, response, ParseError(resp)

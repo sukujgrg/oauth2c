@@ -3,6 +3,7 @@ package oauth2
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -151,8 +152,9 @@ func TestRequestTokenResource(t *testing.T) {
 			}
 			sconfig := ServerConfig{TokenEndpoint: srv.URL}
 
-			_, _, err := RequestToken(context.Background(), cconfig, sconfig, &http.Client{})
+			req, _, err := RequestToken(context.Background(), cconfig, sconfig, &http.Client{})
 			noErr(t, err)
+			eq(t, req.StatusCode, http.StatusOK)
 			eq(t, got["resource"], tc.expected)
 		})
 	}
@@ -205,7 +207,30 @@ func TestRequestDeviceAuthorizationNonce(t *testing.T) {
 		eq(t, got.Get("nonce"), "n-0S6_WzA2Mj")
 		eq(t, req.Nonce, "n-0S6_WzA2Mj")
 		eq(t, req.NonceSource, NonceSourceCustom)
+		eq(t, req.StatusCode, http.StatusOK)
 	})
+}
+
+func TestRequestTokenRecordsErrorStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"unauthorized_client","error_description":"Grant type not allowed"}`))
+	}))
+	defer srv.Close()
+
+	req, _, err := RequestToken(context.Background(), ClientConfig{
+		ClientID:   "native",
+		GrantType:  ClientCredentialsGrantType,
+		AuthMethod: NoneAuthMethod,
+	}, ServerConfig{TokenEndpoint: srv.URL}, &http.Client{})
+	isErr(t, err)
+	eq(t, req.StatusCode, http.StatusUnauthorized)
+	var oe *Error
+	if !errors.As(err, &oe) {
+		t.Fatalf("got %T, want *Error", err)
+	}
+	eq(t, oe.ErrorCode, "unauthorized_client")
 }
 
 func TestAuthenticateClientMTLSEndpointAlias(t *testing.T) {

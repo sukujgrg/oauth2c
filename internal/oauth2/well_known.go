@@ -55,6 +55,7 @@ func FetchOpenIDConfiguration(ctx context.Context, issuerURL string, hc *http.Cl
 	}
 
 	defer resp.Body.Close()
+	request.StatusCode = resp.StatusCode
 
 	if resp.StatusCode != http.StatusOK {
 		return request, c, ParseError(resp)

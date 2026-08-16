@@ -1,4 +1,4 @@
 interface:
   display_name: "OAuth2c"
-  short_description: "Drive OAuth 2.0 and OIDC grants from flags."
-  default_prompt: "Use $oauth2c to run a client_credentials grant against $OAUTH2C_ISSUER, write token JSON to stdout, and diagnose the JSON-lines protocol trace on stderr."
+  short_description: "Validate OAuth 2.0 and OIDC apps from flags."
+  default_prompt: "Use $oauth2c to validate the OAuth/OIDC client I was given (issuer, client_id, and redirect_uri if it is an interactive grant). Pick the grant that matches the client; treat an expected denial as a pass. Prefer a non-interactive grant when unattended. Write token JSON to stdout and diagnose the JSON-lines protocol trace on stderr."

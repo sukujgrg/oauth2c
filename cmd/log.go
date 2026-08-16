@@ -61,9 +61,9 @@ func (l *stderrLog) error(err error) {
 	if w == io.Discard {
 		return
 	}
-	event := map[string]any{"error": err.Error()}
+	event := map[string]any{"error": errorFields(err)}
 	if writeErr := writeJSON(w, event); writeErr != nil {
-		_, _ = fmt.Fprintf(w, "{\"error\":%q}\n", err.Error())
+		_, _ = fmt.Fprintf(w, "{\"error\":{\"error\":%q}}\n", err.Error())
 	}
 }
 
@@ -159,14 +159,10 @@ func LogRequest(r oauth2.Request) {
 }
 
 func LogRequestAndResponse(request oauth2.Request, response interface{}) {
-	var generic any
-	if response != nil {
-		var err error
-		generic, err = fromJSON(response)
-		if err != nil {
-			LogError(err)
-			return
-		}
+	generic, err := responseBody(request.StatusCode, response)
+	if err != nil {
+		LogError(err)
+		return
 	}
 
 	if request.URL == nil {
@@ -177,6 +173,64 @@ func LogRequestAndResponse(request oauth2.Request, response interface{}) {
 	}
 
 	printSection("request", requestFields(request, generic))
+}
+
+func responseBody(status int, response any) (any, error) {
+	var body any
+	if err, ok := response.(error); ok {
+		body = errorFields(err)
+	} else if response != nil {
+		var convErr error
+		body, convErr = fromJSON(response)
+		if convErr != nil {
+			return nil, convErr
+		}
+	}
+	return mergeHTTPStatus(status, body), nil
+}
+
+func errorFields(err error) map[string]any {
+	var oe *oauth2.Error
+	if errors.As(err, &oe) {
+		m := map[string]any{}
+		if oe.StatusCode != 0 {
+			m["status"] = oe.StatusCode
+		}
+		if oe.ErrorCode != "" {
+			m["error"] = oe.ErrorCode
+		}
+		if oe.Description != "" {
+			m["error_description"] = oe.Description
+		}
+		if oe.Hint != "" {
+			m["error_hint"] = oe.Hint
+		}
+		if oe.Cause != "" {
+			m["cause"] = oe.Cause
+		}
+		if len(m) == 0 {
+			m["error"] = oe.Error()
+		}
+		return m
+	}
+	return map[string]any{"error": err.Error()}
+}
+
+func mergeHTTPStatus(status int, body any) any {
+	if status == 0 {
+		return body
+	}
+	m, ok := body.(map[string]any)
+	if !ok {
+		if body == nil {
+			return map[string]any{"status": status}
+		}
+		return map[string]any{"status": status, "body": body}
+	}
+	if _, exists := m["status"]; !exists {
+		m["status"] = status
+	}
+	return m
 }
 
 func LogTokens(response oauth2.TokenResponse) {
