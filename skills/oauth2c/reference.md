@@ -18,8 +18,9 @@ Toggles: `--pkce`, `--nonce <value>`, `--par`, `--dpop`, `--insecure`.
 
 ## stderr trace
 
-JSON lines. Parse each line as one object. `--silent` drops the trace.
-Stdout is still token JSON.
+JSON lines. Parse each line as one object. `--silent` drops the
+protocol trace; `error` events still appear. Stdout is still token
+JSON. `--help` is human text on stdout.
 
 Keep the streams separate:
 
@@ -36,13 +37,11 @@ Each event has one top-level key.
 | --- | --- |
 | `request` | HTTP call: `method`, `url`, form/query/headers, nested `response`. `Authorization: Basic …` is redacted; `client_secret` still appears under `input`. |
 | `input` | Resolved client config (includes secrets). |
-| `check <name>` | Client-side assertion. `result` is `pass`, `fail`, or `skip`. Failed checks exit 1. |
+| `check <name>` | Client-side assertion. `result` is `pass`, `fail`, or `skip`. Failed checks exit 1, except `id_token.nonce` when the AS omits a sent nonce (`result: fail`, process continues). A nonce mismatch still exits 1. |
 | `access_token` / `id_token` | JWT claims, `(opaque)`, or `(jwe)`. |
-| `error` | Failure message. |
+| `error` | Failure message, including unknown flags, missing args, and SIGINT/SIGTERM (`Interrupted`). |
 | `warning` | Non-fatal hint. |
 | `authorization_url` / `verification_url` / `waiting` | Browser or device-flow prompts. The process is waiting for a user. |
-
-SIGINT/SIGTERM prints `Interrupted` and exits 1.
 
 ## Auth0 demo env
 

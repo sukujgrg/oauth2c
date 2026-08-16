@@ -32,9 +32,11 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 
 	cmd = &OAuth2Cmd{
 		Command: &cobra.Command{
-			Use:   "oauth2c [issuer url]",
-			Short: "Flag-driven OAuth2 client for testing apps",
-			Args:  cobra.ExactArgs(1),
+			Use:           "oauth2c [issuer url]",
+			Short:         "Flag-driven OAuth2 client for testing apps",
+			Args:          cobra.ExactArgs(1),
+			SilenceUsage:  true,
+			SilenceErrors: true,
 		},
 	}
 

@@ -4,13 +4,14 @@ description: >-
   Drive the oauth2c CLI to test OAuth 2.0 / OIDC apps against a real
   authorization server. Use when running grants, fetching tokens, checking
   PKCE/nonce/PAR/DPoP, or diagnosing protocol failures with oauth2c.
+license: Apache-2.0
 ---
 
 # oauth2c
 
 Flag-driven OAuth 2.0 / OIDC client. No prompts. Token JSON on stdout.
-JSON-lines protocol trace on stderr. Traces dump secrets; not a
-production client.
+JSON lines on stderr (protocol trace and CLI errors). Traces dump
+secrets; not a production client.
 
 Install (no Go required):
 
@@ -31,15 +32,18 @@ Claude, Codex, or equivalent).
 
 ## Workflow
 
-1. `oauth2c version` — if that fails, install the binary.
+1. `oauth2c version` — need `oauth2c version 2.`. Missing or not 2.x →
+   install with the command above. That script installs a release
+   binary, not `go install`.
 2. If using the Auth0 demo, source `.env.auth0` and confirm the vars you
    will pass are non-empty. An empty flag value exits 1.
 3. Prefer a grant that does not wait on a browser. Do not start a browser
    grant unless a human can finish login. `--no-browser` only skips opening
    the URL; it still waits.
 4. Keep stdout and stderr separate. Do not use `2>&1`.
-5. First run: no `--silent`. Exit 0 → token JSON on stdout. Later runs may
-   add `--silent` if you only need that JSON.
+5. First run: no `--silent`. Exit 0 → token JSON on stdout. A failed
+   `check id_token.nonce` with `received` `(missing)` can still exit 0.
+   Later runs may add `--silent` if you only need that JSON.
 6. Exit 1 → diagnose from stderr, fix flags, rerun. Do not invent a new client.
 
 ```
@@ -48,8 +52,9 @@ oauth2c <issuer-url-or-json-file> --grant-type <type> [flags] >token.json 2>trac
 
 - `--grant-type` is required.
 - stderr is JSON lines. Parse each line as one object. Do not parse the
-  whole stream as one object. `--silent` drops the trace. Stdout is
-  always token JSON.
+  whole stream as one object. `--silent` drops the protocol trace;
+  `error` events still appear. Stdout is always token JSON. `--help` is
+  human text on stdout.
 - Issuer: no trailing slash. oauth2c appends `/.well-known/openid-configuration`.
 - First arg may be a JSON file: `client_id`, `client_secret`,
   `openid_discovery_endpoint`. Flags override the file.
@@ -93,8 +98,9 @@ Do not parse tokens from stderr. Use stdout (`token.json`).
 
 On failure, read `trace.jsonl` in this order (one JSON object per line):
 
-1. `error`
-2. any `check <name>` with `result` = `fail`
+1. `error` (unknown flag, missing args, `Interrupted`, grant failure)
+2. any `check <name>` with `result` = `fail` (nonce omitted is fail
+   with exit 0; a nonce mismatch is fail with exit 1)
 3. the last `request.response`
 
 Then apply the matching fix:

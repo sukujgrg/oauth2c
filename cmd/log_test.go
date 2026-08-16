@@ -437,7 +437,9 @@ func TestSilentDiscardsTrace(t *testing.T) {
 	LogTokens(oauth2.TokenResponse{AccessToken: "opaque-access-token"})
 	_ = CheckState("csrf-state", "csrf-state")
 
-	eq(t, output.String(), "")
+	events := parseTrace(t, output)
+	eq(t, len(events), 1)
+	eq(t, events[0]["error"], "boom")
 }
 
 func TestJSONTraceLines(t *testing.T) {

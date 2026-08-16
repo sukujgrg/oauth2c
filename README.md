@@ -18,7 +18,8 @@ intentional so a model (or a human) can diagnose the grant. This is not a
 production client. Do not point it at credentials you cannot afford to
 leak into a log.
 
-`--silent` discards the stderr trace so callers get only the token JSON.
+`--silent` discards the protocol trace so callers get only the token
+JSON on stdout. `error` events still appear if the command fails.
 
 Browser grants (authorization code, hybrid, implicit, device) still need a
 user at the authorization server. `--no-browser` only skips opening the
@@ -74,7 +75,7 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.ps1 | iex
 ```
 
-Pin a version with `OAUTH2C_VERSION=v2.0.0`. Change the install directory
+Pin a version with `OAUTH2C_VERSION=v2.0.1`. Change the install directory
 with `OAUTH2C_BINDIR`.
 
 Or download a binary from the [releases page].
@@ -93,7 +94,7 @@ make install
 is available, and stamps `oauth2c version` from the current git tag.
 
 ```sh
-GOEXPERIMENT=jsonv2 go install github.com/sukujgrg/oauth2c@v2.0.0
+GOEXPERIMENT=jsonv2 go install github.com/sukujgrg/oauth2c@v2.0.1
 ```
 
 ## Demo with Auth0
@@ -197,11 +198,13 @@ HTTP server which acts as a client application and waits for a callback.
 > **Note**: To make browser flows work add `http://localhost:9876/callback` as a
 > redirect URL to your client.
 
-stderr is the protocol trace: requests, responses, decoded tokens, and
-checks, as JSON lines (one object per line). Use `--silent` when you
-only want the token JSON on stdout. If you want YAML, install
-[yq](https://github.com/mikefarah/yq) (`brew install yq`) and pipe
-stderr through `yq -p json -o yaml`.
+stderr is JSON lines (one object per event): the protocol trace
+(requests, responses, decoded tokens, checks) and CLI failures
+(unknown flags, missing args, interrupt). `--help` stays human text on
+stdout. Use `--silent` when you only want the token JSON on stdout;
+`error` events still appear if the command fails. If you want YAML,
+install [yq](https://github.com/mikefarah/yq) (`brew install yq`) and
+pipe stderr through `yq -p json -o yaml`.
 
 ## Examples
 
@@ -424,7 +427,8 @@ OpenID Connect `nonce` associates a client session with an ID Token and
 mitigates replay attacks. Authorization requests still send a generated `nonce`
 by default. When `--nonce` is set, oauth2c uses that value instead. If an ID
 Token is returned, oauth2c verifies its signature and `iss`, `aud`, `exp`, and
-`iat` claims, then fails when the `nonce` claim is missing or does not match.
+`iat` claims. A missing `nonce` claim is logged as a failed check but the
+process still succeeds; a mismatched `nonce` exits 1.
 
 ```sh
 oauth2c "$OAUTH2C_ISSUER" \

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,14 +21,15 @@ func init() {
 
 	go func() {
 		<-c
-		fmt.Fprintln(os.Stderr, "Interrupted")
+		cmd.LogError(errors.New("Interrupted"))
 		os.Exit(1)
 	}()
 }
 
 func main() {
+	version, commit, date = cmd.ResolveBuildIdentity(version, commit, date)
 	if err := cmd.NewOAuth2Cmd(version, commit, date).Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		cmd.LogError(err)
 		os.Exit(1)
 	}
 }

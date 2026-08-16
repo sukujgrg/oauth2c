@@ -17,23 +17,31 @@ import (
 	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
-// trace is the JSON-lines protocol log on stderr. --silent discards it
-// so only the token JSON on stdout remains.
+// trace is the JSON-lines log on stderr. --silent discards protocol
+// events so only the token JSON on stdout remains; error events still
+// write so a failed run is diagnosable.
 var trace = stderrLog{w: os.Stderr}
 
 type stderrLog struct {
 	w io.Writer
 }
 
+func (l *stderrLog) dest() io.Writer {
+	if l == nil || l.w == nil {
+		return io.Discard
+	}
+	return l.w
+}
+
 func (l *stderrLog) enabled() bool {
-	return !silent && l != nil && l.w != nil && l.w != io.Discard
+	return !silent && l.dest() != io.Discard
 }
 
 func (l *stderrLog) writer() io.Writer {
 	if !l.enabled() {
 		return io.Discard
 	}
-	return l.w
+	return l.dest()
 }
 
 func (l *stderrLog) doc(v any) {
@@ -46,12 +54,16 @@ func (l *stderrLog) doc(v any) {
 }
 
 func (l *stderrLog) error(err error) {
-	if err == nil || !l.enabled() {
+	if err == nil {
+		return
+	}
+	w := l.dest()
+	if w == io.Discard {
 		return
 	}
 	event := map[string]any{"error": err.Error()}
-	if writeErr := writeJSON(l.writer(), event); writeErr != nil {
-		_, _ = fmt.Fprintf(l.writer(), "{\"error\":%q}\n", err.Error())
+	if writeErr := writeJSON(w, event); writeErr != nil {
+		_, _ = fmt.Fprintf(w, "{\"error\":%q}\n", err.Error())
 	}
 }
 
@@ -276,6 +288,9 @@ func CheckIDToken(expectedNonce, nonceSource, idToken string, clientConfig oauth
 		}
 	}
 	LogVerifications(checks)
+	// Missing nonce is logged as fail but is not fatal: many authorization
+	// servers omit the claim even when the client sent one. A mismatch still
+	// fails the process.
 	if errors.Is(err, oauth2.ErrIDTokenNonceMissing) {
 		return nil
 	}

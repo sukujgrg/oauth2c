@@ -3,7 +3,7 @@
 #   irm https://raw.githubusercontent.com/sukujgrg/oauth2c/master/scripts/install.ps1 | iex
 #
 # Optional:
-#   $env:OAUTH2C_VERSION = "v2.0.0"   # pin a release (default: latest)
+#   $env:OAUTH2C_VERSION = "v2.0.1"   # pin a release (default: latest)
 #   $env:OAUTH2C_BINDIR = "$env:LOCALAPPDATA\oauth2c"  # install directory
 $ErrorActionPreference = "Stop"
 
@@ -29,31 +29,54 @@ if (-not $Version) {
 }
 
 $versionNum = $Version.TrimStart("v")
-$asset = "oauth2c_${versionNum}_Windows_${ArchName}.zip"
+$assetZip = "oauth2c_${versionNum}_Windows_${ArchName}.zip"
+$assetTar = "oauth2c_${versionNum}_Windows_${ArchName}.tar.gz"
 $base = "https://github.com/$Repo/releases/download/$Version"
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("oauth2c-install-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 
+function Get-ChecksumLine([string]$sumsPath, [string]$name) {
+    return Select-String -Path $sumsPath -Pattern "[A-Fa-f0-9]{64}\s+$([regex]::Escape($name))$"
+}
+
 try {
     Write-Host "Installing oauth2c $Version (Windows/$ArchName) to $BinDir"
-    $zip = Join-Path $tmp $asset
     $sums = Join-Path $tmp "checksums.txt"
-    Invoke-WebRequest -Uri "$base/$asset" -OutFile $zip
     Invoke-WebRequest -Uri "$base/checksums.txt" -OutFile $sums
 
-    $expected = (Select-String -Path $sums -Pattern "[A-Fa-f0-9]{64}\s+$([regex]::Escape($asset))$").Matches
-    if ($expected.Count -eq 1) {
-        $hash = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
-        $want = $expected[0].Value.Split(" ", 2)[0].ToLower()
-        if ($hash -ne $want) {
-            throw "oauth2c install: checksum mismatch for $asset"
-        }
+    # v2.0.0 shipped Windows as tar.gz; later releases use zip.
+    $zipLine = Get-ChecksumLine $sums $assetZip
+    $tarLine = Get-ChecksumLine $sums $assetTar
+    if ($zipLine) {
+        $asset = $assetZip
+        $expectedLine = $zipLine
+    }
+    elseif ($tarLine) {
+        $asset = $assetTar
+        $expectedLine = $tarLine
     }
     else {
-        Write-Warning "oauth2c install: checksum not found for $asset; skipping verify"
+        throw "oauth2c install: no Windows/$ArchName archive in checksums.txt"
     }
 
-    Expand-Archive -Path $zip -DestinationPath $tmp -Force
+    $archive = Join-Path $tmp $asset
+    Invoke-WebRequest -Uri "$base/$asset" -OutFile $archive
+
+    $hash = (Get-FileHash -Algorithm SHA256 -Path $archive).Hash.ToLower()
+    $want = $expectedLine.Line.Split(" ", 2)[0].ToLower()
+    if ($hash -ne $want) {
+        throw "oauth2c install: checksum mismatch for $asset"
+    }
+
+    if ($asset.EndsWith(".zip")) {
+        Expand-Archive -Path $archive -DestinationPath $tmp -Force
+    }
+    else {
+        tar -xzf $archive -C $tmp
+        if ($LASTEXITCODE -ne 0) {
+            throw "oauth2c install: failed to extract $asset"
+        }
+    }
     $src = Get-ChildItem -Path $tmp -Recurse -Filter "oauth2c.exe" | Select-Object -First 1
     if (-not $src) {
         throw "oauth2c install: archive did not contain oauth2c.exe"

@@ -123,3 +123,29 @@ func TestRejectEmptyFlags(t *testing.T) {
 		noErr(t, rejectEmptyFlags(cmd.Command))
 	})
 }
+
+func TestCobraErrorsStayOffStderr(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "unknown flag", args: []string{"--not-a-real-flag"}, want: "unknown flag"},
+		{name: "missing issuer", args: []string{"--grant-type", "client_credentials"}, want: "accepts 1 arg(s)"},
+		{name: "version unknown flag", args: []string{"version", "--not-a-real-flag"}, want: "unknown flag"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stderr := &bytes.Buffer{}
+			cmd := NewOAuth2Cmd("master", "none", "unknown")
+			cmd.SetArgs(tc.args)
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(stderr)
+			err := cmd.Execute()
+			isErr(t, err)
+			contains(t, err.Error(), tc.want)
+			eq(t, stderr.String(), "")
+		})
+	}
+}
