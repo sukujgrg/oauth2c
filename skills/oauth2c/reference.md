@@ -65,7 +65,10 @@ usable at `/userinfo`.
 or `http://[::1]`. The `redirect_uri` in authorize and token must still
 include the port the app actually bound. oauth2c does not bind `:0` and
 rewrite `redirect_uri`; use a fixed port. To see any-port policy, run
-two fixed ports. Google Web clients are exact-match, like Auth0.
+two fixed ports. Google issues a `client_secret` for Desktop apps; send
+it on the token request with `--auth-method client_secret_post`. PKCE
+does not replace that. Do not use the skill’s public recipe
+(`--auth-method none`). Google Web clients are exact-match, like Auth0.
 
 ## Auth0 demo env
 
