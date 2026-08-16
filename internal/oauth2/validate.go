@@ -46,7 +46,16 @@ func (c ClientConfig) Validate() error {
 	if err := optionalOneOf("grant type", c.GrantType, grantTypes); err != nil {
 		return err
 	}
+	if c.ClientID == "" {
+		return fmt.Errorf("client id is required")
+	}
 	if err := optionalOneOf("auth method", c.AuthMethod, authMethods); err != nil {
+		return err
+	}
+	if err := requireGrantFields(c); err != nil {
+		return err
+	}
+	if err := requireAuthMethodFields(c); err != nil {
 		return err
 	}
 	for _, rt := range c.ResponseType {
@@ -87,6 +96,48 @@ func (c ClientConfig) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+func requireGrantFields(c ClientConfig) error {
+	switch c.GrantType {
+	case PasswordGrantType:
+		if err := requireValue("username", c.Username); err != nil {
+			return err
+		}
+		return requireValue("password", c.Password)
+	case RefreshTokenGrantType:
+		return requireValue("refresh token", c.RefreshToken)
+	case JWTBearerGrantType:
+		return requireValue("assertion", c.Assertion)
+	case TokenExchangeGrantType:
+		if err := requireValue("subject token", c.SubjectToken); err != nil {
+			return err
+		}
+		return requireValue("subject token type", c.SubjectTokenType)
+	}
+	return nil
+}
+
+func requireAuthMethodFields(c ClientConfig) error {
+	switch c.AuthMethod {
+	case ClientSecretBasicAuthMethod, ClientSecretPostAuthMethod, ClientSecretJwtAuthMethod:
+		return requireValue("client secret", c.ClientSecret)
+	case PrivateKeyJwtAuthMethod:
+		return requireValue("signing key", c.SigningKey)
+	case TLSClientAuthMethod, SelfSignedTLSAuthMethod:
+		if err := requireValue("tls cert", c.TLSCert); err != nil {
+			return err
+		}
+		return requireValue("tls key", c.TLSKey)
+	}
+	return nil
+}
+
+func requireValue(name, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("%s is required", name)
+	}
 	return nil
 }
 

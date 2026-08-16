@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"crypto/subtle"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -14,11 +15,10 @@ import (
 	"github.com/go-jose/go-jose/v4"
 
 	"github.com/sukujgrg/oauth2c/internal/oauth2"
-	"github.com/sukujgrg/oauth2c/internal/yamlprint"
 )
 
-// trace is the educational stderr log. --silent discards it so only the
-// token JSON on stdout remains.
+// trace is the JSON-lines protocol log on stderr. --silent discards it
+// so only the token JSON on stdout remains.
 var trace = stderrLog{w: os.Stderr}
 
 type stderrLog struct {
@@ -36,39 +36,48 @@ func (l *stderrLog) writer() io.Writer {
 	return l.w
 }
 
-func (l *stderrLog) line(format string, args ...any) {
+func (l *stderrLog) doc(v any) {
 	if !l.enabled() {
 		return
 	}
-	_, _ = fmt.Fprintf(l.writer(), format+"\n", args...)
-}
-
-func (l *stderrLog) yaml(v any) {
-	if !l.enabled() {
-		return
-	}
-	if err := yml.Write(l.writer(), v); err != nil {
+	if err := writeJSON(l.writer(), v); err != nil {
 		l.error(err)
 	}
-}
-
-func (l *stderrLog) doc(v any) {
-	l.yaml(v)
-	l.line("")
 }
 
 func (l *stderrLog) error(err error) {
 	if err == nil || !l.enabled() {
 		return
 	}
-	if writeErr := yml.Write(l.writer(), struct {
-		Error string `yaml:"error"`
-	}{Error: err.Error()}); writeErr != nil {
-		_, _ = fmt.Fprintf(l.writer(), "error: %s\n", err)
+	event := map[string]any{"error": err.Error()}
+	if writeErr := writeJSON(l.writer(), event); writeErr != nil {
+		_, _ = fmt.Fprintf(l.writer(), "{\"error\":%q}\n", err.Error())
 	}
 }
 
-var yml = yamlprint.New()
+func writeJSON(w io.Writer, v any) error {
+	out, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("json: %w", err)
+	}
+	if len(out) == 0 || string(out) == "{}" || string(out) == "null" {
+		return nil
+	}
+	_, err = fmt.Fprintln(w, string(out))
+	return err
+}
+
+func fromJSON(v any) (any, error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+	var generic any
+	if err := json.Unmarshal(data, &generic); err != nil {
+		return nil, fmt.Errorf("json: %w", err)
+	}
+	return generic, nil
+}
 
 func printSection(name string, v any) {
 	if name == "" {
@@ -141,7 +150,7 @@ func LogRequestAndResponse(request oauth2.Request, response interface{}) {
 	var generic any
 	if response != nil {
 		var err error
-		generic, err = yamlprint.FromJSON(response)
+		generic, err = fromJSON(response)
 		if err != nil {
 			LogError(err)
 			return
@@ -384,76 +393,104 @@ func LogURL(name, rawURL string, noBrowser bool) {
 }
 
 type clientInputLog struct {
-	IssuerURL              string   `yaml:"issuer_url,omitempty"`
-	ClientID               string   `yaml:"client_id,omitempty"`
-	ClientSecret           string   `yaml:"client_secret,omitempty"`
-	GrantType              string   `yaml:"grant_type,omitempty"`
-	AuthMethod             string   `yaml:"auth_method,omitempty"`
-	ResponseTypes          []string `yaml:"response_types,omitempty,flow"`
-	ResponseMode           string   `yaml:"response_mode,omitempty"`
-	RedirectURL            string   `yaml:"redirect_url,omitempty"`
-	Scopes                 []string `yaml:"scopes,omitempty,flow"`
-	Audience               []string `yaml:"audience,omitempty,flow"`
-	Resource               []string `yaml:"resource,omitempty,flow"`
-	ACRValues              []string `yaml:"acr_values,omitempty,flow"`
-	PKCE                   bool     `yaml:"pkce,omitempty"`
-	PAR                    bool     `yaml:"par,omitempty"`
-	RequestObject          bool     `yaml:"request_object,omitempty"`
-	EncryptedRequestObject bool     `yaml:"encrypted_request_object,omitempty"`
-	DPoP                   bool     `yaml:"dpop,omitempty"`
-	Nonce                  string   `yaml:"nonce,omitempty"`
-	Username               string   `yaml:"username,omitempty"`
-	Password               string   `yaml:"password,omitempty"`
-	RefreshToken           string   `yaml:"refresh_token,omitempty"`
-	SigningKey             string   `yaml:"signing_key,omitempty"`
-	SubjectTokenType       string   `yaml:"subject_token_type,omitempty"`
-	ActorTokenType         string   `yaml:"actor_token_type,omitempty"`
-	IDTokenHint            string   `yaml:"id_token_hint,omitempty"`
-	LoginHint              string   `yaml:"login_hint,omitempty"`
-	IDPHint                string   `yaml:"idp_hint,omitempty"`
-	Claims                 string   `yaml:"claims,omitempty"`
-	RAR                    string   `yaml:"rar,omitempty"`
-	Prompt                 []string `yaml:"prompt,omitempty,flow"`
-	MaxAge                 string   `yaml:"max_age,omitempty"`
-	Purpose                string   `yaml:"purpose,omitempty"`
-	AuthenticationCode     string   `yaml:"authentication_code,omitempty"`
-	TLSCert                string   `yaml:"tls_cert,omitempty"`
-	TLSKey                 string   `yaml:"tls_key,omitempty"`
-	TLSRootCA              string   `yaml:"tls_root_ca,omitempty"`
+	IssuerURL              string   `json:"issuer_url,omitempty"`
+	ClientID               string   `json:"client_id,omitempty"`
+	ClientSecret           string   `json:"client_secret,omitempty"`
+	GrantType              string   `json:"grant_type,omitempty"`
+	AuthMethod             string   `json:"auth_method,omitempty"`
+	ResponseTypes          []string `json:"response_types,omitempty"`
+	ResponseMode           string   `json:"response_mode,omitempty"`
+	RedirectURL            string   `json:"redirect_url,omitempty"`
+	Scopes                 []string `json:"scopes,omitempty"`
+	Audience               []string `json:"audience,omitempty"`
+	Resource               []string `json:"resource,omitempty"`
+	ACRValues              []string `json:"acr_values,omitempty"`
+	PKCE                   bool     `json:"pkce,omitempty"`
+	PAR                    bool     `json:"par,omitempty"`
+	RequestObject          bool     `json:"request_object,omitempty"`
+	EncryptedRequestObject bool     `json:"encrypted_request_object,omitempty"`
+	DPoP                   bool     `json:"dpop,omitempty"`
+	Nonce                  string   `json:"nonce,omitempty"`
+	Username               string   `json:"username,omitempty"`
+	Password               string   `json:"password,omitempty"`
+	RefreshToken           string   `json:"refresh_token,omitempty"`
+	SigningKey             string   `json:"signing_key,omitempty"`
+	SubjectTokenType       string   `json:"subject_token_type,omitempty"`
+	ActorTokenType         string   `json:"actor_token_type,omitempty"`
+	IDTokenHint            string   `json:"id_token_hint,omitempty"`
+	LoginHint              string   `json:"login_hint,omitempty"`
+	IDPHint                string   `json:"idp_hint,omitempty"`
+	Claims                 string   `json:"claims,omitempty"`
+	RAR                    string   `json:"rar,omitempty"`
+	Prompt                 []string `json:"prompt,omitempty"`
+	MaxAge                 string   `json:"max_age,omitempty"`
+	Purpose                string   `json:"purpose,omitempty"`
+	AuthenticationCode     string   `json:"authentication_code,omitempty"`
+	TLSCert                string   `json:"tls_cert,omitempty"`
+	TLSKey                 string   `json:"tls_key,omitempty"`
+	TLSRootCA              string   `json:"tls_root_ca,omitempty"`
 }
 
 type nonceLog struct {
-	Spec    string `yaml:"spec,omitempty"`
-	Purpose string `yaml:"purpose,omitempty"`
-	Source  string `yaml:"source,omitempty"`
-	Value   string `yaml:"value,omitempty"`
+	Spec    string `json:"spec,omitempty"`
+	Purpose string `json:"purpose,omitempty"`
+	Source  string `json:"source,omitempty"`
+	Value   string `json:"value,omitempty"`
 }
 
 type pkceLog struct {
-	Spec          string `yaml:"spec,omitempty"`
-	Purpose       string `yaml:"purpose,omitempty"`
-	CodeVerifier  string `yaml:"code_verifier,omitempty"`
-	CodeChallenge string `yaml:"code_challenge,omitempty"`
+	Spec          string `json:"spec,omitempty"`
+	Purpose       string `json:"purpose,omitempty"`
+	CodeVerifier  string `json:"code_verifier,omitempty"`
+	CodeChallenge string `json:"code_challenge,omitempty"`
 }
 
 type signedJWTLog struct {
-	Encoding string         `yaml:"encoding"`
-	Claims   map[string]any `yaml:",inline"`
+	Encoding string         `json:"encoding"`
+	Claims   map[string]any `json:"-"`
+}
+
+func (s signedJWTLog) MarshalJSON() ([]byte, error) {
+	m := map[string]any{"encoding": s.Encoding}
+	for k, v := range s.Claims {
+		m[k] = v
+	}
+	return json.Marshal(m)
 }
 
 type certificateLog struct {
-	Subject   string `yaml:"subject,omitempty"`
-	Issuer    string `yaml:"issuer,omitempty"`
-	NotBefore string `yaml:"not_before,omitempty"`
-	NotAfter  string `yaml:"not_after,omitempty"`
+	Subject   string `json:"subject,omitempty"`
+	Issuer    string `json:"issuer,omitempty"`
+	NotBefore string `json:"not_before,omitempty"`
+	NotAfter  string `json:"not_after,omitempty"`
 }
 
 type requestLog struct {
-	Method      string            `yaml:"method,omitempty"`
-	URL         string            `yaml:"url,omitempty"`
-	Params      map[string]string `yaml:",inline"`
-	Certificate *certificateLog   `yaml:"certificate,omitempty"`
-	Response    any               `yaml:"response,omitempty"`
+	Method      string            `json:"method,omitempty"`
+	URL         string            `json:"url,omitempty"`
+	Params      map[string]string `json:"-"`
+	Certificate *certificateLog   `json:"certificate,omitempty"`
+	Response    any               `json:"response,omitempty"`
+}
+
+func (r requestLog) MarshalJSON() ([]byte, error) {
+	m := map[string]any{}
+	if r.Method != "" {
+		m["method"] = r.Method
+	}
+	if r.URL != "" {
+		m["url"] = r.URL
+	}
+	for k, v := range r.Params {
+		m[k] = v
+	}
+	if r.Certificate != nil {
+		m["certificate"] = r.Certificate
+	}
+	if r.Response != nil {
+		m["response"] = r.Response
+	}
+	return json.Marshal(m)
 }
 
 func requestFields(r oauth2.Request, response any) requestLog {

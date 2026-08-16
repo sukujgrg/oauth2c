@@ -14,6 +14,7 @@ import (
 
 	"github.com/cli/browser"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/sukujgrg/oauth2c/internal/oauth2"
 )
 
@@ -32,7 +33,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd = &OAuth2Cmd{
 		Command: &cobra.Command{
 			Use:   "oauth2c [issuer url]",
-			Short: "Command-line OAuth2 client",
+			Short: "Flag-driven OAuth2 client for testing apps",
 			Args:  cobra.ExactArgs(1),
 		},
 	}
@@ -79,7 +80,7 @@ func NewOAuth2Cmd(version, commit, date string) (cmd *OAuth2Cmd) {
 	cmd.PersistentFlags().DurationVar(&cconfig.BrowserTimeout, "browser-timeout", 10*time.Minute, "browser timeout")
 	cmd.PersistentFlags().BoolVar(&cconfig.Insecure, "insecure", false, "allow insecure connections")
 	cmd.PersistentFlags().BoolVarP(&silent, "silent", "s", false, "print only the token JSON on stdout")
-	cmd.PersistentFlags().BoolVar(&cconfig.NoBrowser, "no-browser", false, "do not open browser")
+	cmd.PersistentFlags().BoolVar(&cconfig.NoBrowser, "no-browser", false, "do not open a browser; still waits for the callback or device approval")
 	cmd.PersistentFlags().BoolVar(&cconfig.DPoP, "dpop", false, "use DPoP")
 	cmd.PersistentFlags().StringVar(&cconfig.Claims, "claims", "", "use claims")
 	cmd.PersistentFlags().StringVar(&cconfig.RAR, "rar", "", "use rich authorization request (RAR)")
@@ -108,6 +109,11 @@ func (c *OAuth2Cmd) Run(cconfig *oauth2.ClientConfig, sconfig *oauth2.ServerConf
 			cert   tls.Certificate
 			err    error
 		)
+
+		if err := rejectEmptyFlags(cmd); err != nil {
+			LogError(err)
+			os.Exit(1)
+		}
 
 		if data, err = os.ReadFile(args[0]); err == nil {
 			if err = json.Unmarshal(data, &config); err != nil {
@@ -233,4 +239,35 @@ func (c *OAuth2Cmd) PrintResult(result interface{}) {
 	}
 
 	_, _ = fmt.Fprintln(c.OutOrStdout(), string(output))
+}
+
+func rejectEmptyFlags(cmd *cobra.Command) error {
+	var first error
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		if first != nil {
+			return
+		}
+		switch f.Value.Type() {
+		case "string":
+			if strings.TrimSpace(f.Value.String()) == "" {
+				first = fmt.Errorf("--%s is empty", f.Name)
+			}
+		case "stringSlice":
+			vals, err := cmd.Flags().GetStringSlice(f.Name)
+			if err != nil {
+				return
+			}
+			if len(vals) == 0 {
+				first = fmt.Errorf("--%s is empty", f.Name)
+				return
+			}
+			for _, v := range vals {
+				if strings.TrimSpace(v) == "" {
+					first = fmt.Errorf("--%s has an empty value", f.Name)
+					return
+				}
+			}
+		}
+	})
+	return first
 }
